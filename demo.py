@@ -281,76 +281,54 @@ async def demo_quantum_aggregation():
 
 
 def demo_pqc_security():
-    print_section("🔐 Demo 5: Post-Quantum Cryptography (Kyber + Dilithium)")
+    print_section("Demo 5: Post-quantum key exchange and signed transport")
 
-    import hashlib
-    import os
+    from qedge.crypto.backends import available_backends, get_kem, get_signer
+    from qedge.crypto.transport import ClientCredentials, ServerIdentity, accept, initiate
 
-    print_status("Initializing PQC Provider (simulation mode)...", "security")
-    print_status("Note: This is a SIMULATION - real PQC requires liboqs library", "warning")
+    backends = available_backends()
+    if not backends:
+        print("No crypto backend installed; install q-edge[pqc] or q-edge[pqc-pure].")
+        return
+    backend = "liboqs" if "liboqs" in backends else "pure"
+    print(f"Backend: {backend}")
+    if backend == "pure":
+        print("  pure-Python ML-KEM/ML-DSA: not constant-time, for tests only")
 
-    # Simulate Kyber-1024
-    print_status("\n📦 Kyber-1024 Key Encapsulation:", "security")
-
-    start_time = time.time()
-    # Simulate keypair generation (real Kyber would use lattice cryptography)
-    public_key = os.urandom(1568)  # Kyber-1024 public key size
-    private_key = os.urandom(3168)  # Kyber-1024 private key size
-    keygen_time = (time.time() - start_time) * 1000
-
-    print_status(f"  Keypair generated in {keygen_time:.2f}ms", "success")
-    print_status(f"  Public key size: {len(public_key)} bytes", "info")
-    print_status(f"  Private key size: {len(private_key)} bytes", "info")
-
-    # Simulate encapsulation
-    start_time = time.time()
-    ciphertext = os.urandom(1568)  # Kyber-1024 ciphertext size
-    shared_secret = hashlib.sha256(public_key + ciphertext).digest()
-    encap_time = (time.time() - start_time) * 1000
-
-    print_status(f"  Encapsulation time: {encap_time:.2f}ms", "success")
-    print_status(f"  Ciphertext size: {len(ciphertext)} bytes", "info")
-    print_status(f"  Shared secret: {len(shared_secret)} bytes", "info")
-
-    # Simulate decapsulation
-    start_time = time.time()
-    decap_secret = hashlib.sha256(public_key + ciphertext).digest()
-    decap_time = (time.time() - start_time) * 1000
-
-    print_status(f"  Decapsulation time: {decap_time:.2f}ms", "success")
-
-    if decap_secret == shared_secret:
-        print_status("  ✓ Shared secrets match!", "success")
-
-    # Simulate Dilithium-5
-    print_status("\n✍️ Dilithium-5 Digital Signatures:", "security")
-
-    sig_public = os.urandom(2592)  # Dilithium-5 public key
-    sig_private = os.urandom(4864)  # Dilithium-5 private key
-    print_status(f"  Signing key: {len(sig_private)} bytes", "info")
-    print_status(f"  Verification key: {len(sig_public)} bytes", "info")
-
-    message = b"Q-Edge: Secure Federated Learning with Quantum Enhancement"
+    kem = get_kem("X25519-ML-KEM-768", backend)
+    signer = get_signer("ML-DSA-65", backend)
+    kem_pk, kem_sk = kem.generate_keypair()
+    sig_pk, sig_sk = signer.generate_keypair()
+    client_pk, client_sk = signer.generate_keypair()
+    server = ServerIdentity(kem_pk, sig_pk)
+    print(f"{kem.name}: public key {kem.public_key_size} B, ciphertext {kem.ciphertext_size} B")
+    print(
+        f"{signer.name}: public key {signer.public_key_size} B, signature {signer.signature_size} B"
+    )
 
     start_time = time.time()
-    # Simulate signature (HMAC as placeholder)
-    signature = hashlib.sha512(sig_private + message).digest()
-    sign_time = (time.time() - start_time) * 1000
+    hello, pending = initiate(
+        ClientCredentials("mobile_000", client_sk), server, kem=kem, signer=signer
+    )
+    server_session, reply = accept(
+        hello,
+        kem=kem,
+        signer=signer,
+        server=server,
+        kem_secret_key=kem_sk,
+        signing_secret_key=sig_sk,
+        client_public_key={"mobile_000": client_pk}.get,
+    )
+    client_session = pending.finish(reply)
+    handshake_ms = (time.time() - start_time) * 1000
+    print(f"Handshake: HELLO {len(hello)} B, ACCEPT {len(reply)} B, {handshake_ms:.1f} ms")
 
-    print_status(f"  Signature generated in {sign_time:.2f}ms", "success")
-    print_status(f"  Signature size: {len(signature)} bytes", "info")
-
-    # Verify
-    start_time = time.time()
-    expected_sig = hashlib.sha512(sig_private + message).digest()
-    is_valid = signature == expected_sig
-    verify_time = (time.time() - start_time) * 1000
-
-    print_status(f"  Verification time: {verify_time:.2f}ms", "success")
-    print_status(f"  Signature valid: {is_valid}", "success" if is_valid else "error")
-
-    print_status("\n🛡️ Security Level: NIST Post-Quantum Level 5 (simulated)", "success")
-    print_status("   Would be resistant to Shor's algorithm attacks!", "info")
+    frame = client_session.seal(b"round 1 update")
+    print(f"Server decrypted: {server_session.open(frame)!r} ({len(frame)} B frame)")
+    try:
+        server_session.open(frame)
+    except ValueError as error:
+        print(f"Replay rejected: {type(error).__name__}")
 
 
 def print_summary():
@@ -379,8 +357,8 @@ def print_summary():
 │     - Hybrid classical-quantum aggregation                          │
 │                                                                      │
 │  ✅ Demo 5: Post-Quantum Cryptography                               │
-│     - Kyber-1024 key encapsulation                                  │
-│     - Dilithium-5 digital signatures                                │
+│     - X25519 + ML-KEM-768 key encapsulation                         │
+│     - ML-DSA-65 signed handshake, ChaCha20-Poly1305 frames          │
 │                                                                      │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Status: Research/Educational Proof-of-Concept                      │

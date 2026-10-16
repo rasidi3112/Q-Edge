@@ -37,7 +37,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 |------------|-------------|--------|
 | **Federated Learning** | Distributed ML without exposing raw data | Simulated |
 | **Quantum ML** | Variational Quantum Circuits (VQC) & Quantum Kernel | PennyLane Simulator |
-| **Post-Quantum Crypto** | Kyber & Dilithium (NIST standards) | Placeholder |
+| **Post-Quantum Crypto** | ML-KEM, ML-DSA (FIPS 203/204), hybrid X25519 | liboqs; transport not yet used by the API |
 
 ### Why Quantum?
 
@@ -70,7 +70,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 │   │ FL Client   │          │  + Celery   │      │ Circuits  │   │
 │   └─────────────┘          └─────────────┘      └───────────┘   │
 │                                                                 │
-│   Security: Kyber/Dilithium, simulated unless liboqs is present │
+│   Security: X25519 + ML-KEM-768, ML-DSA-65 (liboqs)             │
 │   Aggregation: FedAvg + Quantum-Enhanced                        │
 │   Error Mitigation: Zero-Noise Extrapolation                    │
 │                                                                 │
@@ -97,7 +97,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 ### What This is NOT
 - Production-ready software
 - Connected to real quantum hardware
-- Real Kyber/Dilithium (simulated)
+- Audited cryptography (the hybrid KEM and transport are this project's own designs)
 - Trained on real datasets
 
 </td>
@@ -139,13 +139,13 @@ Dependencies are declared only in `pyproject.toml`. Optional extras:
 | `server` | FastAPI server and Celery worker |
 | `fl` | PyTorch and Flower for `qedge.fl.client` |
 | `pqc` | liboqs-python (needs the liboqs C library) |
-| `pqc-pure` | Reserved for a pure-Python ML-KEM/ML-DSA backend; empty for now |
+| `pqc-pure` | kyber-py and dilithium-py: pure Python, not constant-time, tests only |
 | `dev` | pytest, ruff, mypy, pre-commit |
 
 ### Development
 
 ```bash
-pip install -e ".[dev,server]"
+pip install -e ".[dev,server,pqc-pure]"
 pre-commit install
 
 ruff check .
@@ -159,11 +159,23 @@ pytest -m slow         # long-running tests, run weekly in CI
 
 ```bash
 cp .env.example .env   # set JWT_SECRET_KEY and REDIS_PASSWORD
+docker compose run --rm api qedge keys init --dir /keys
 docker compose up --build
 ```
 
 Compose starts the API (published on `127.0.0.1:8000`), one Celery worker and
-Redis. Design decisions are recorded in [`docs/decisions/`](docs/decisions/).
+Redis. The image builds liboqs 0.16.0; the API refuses to start until server
+keys exist.
+
+### Server keys without Docker
+
+```bash
+qedge keys init --dir ./keys --backend pure   # or build liboqs and use --backend liboqs
+QEDGE_CRYPTO_BACKEND=pure QEDGE_KEY_DIR=./keys qedge-api
+```
+
+The `pure` backend logs a warning: it is not constant-time and is meant for
+tests. Design decisions are recorded in [`docs/decisions/`](docs/decisions/).
 
 ### Run Flutter App
 
@@ -186,15 +198,20 @@ Q-Edge/
 │   │   └── zne.py            # Zero-noise extrapolation, readout mitigation
 │   ├── fl/
 │   │   ├── aggregator.py     # Server-side aggregation
-│   │   └── client.py         # Flower client (needs the `fl` extra)
+│   │   ├── client.py         # Flower client (needs the `fl` extra)
+│   │   └── weights.py        # Weight wire format
 │   ├── crypto/
-│   │   └── transport.py      # Client message transport (simulated by default)
+│   │   ├── backends/         # liboqs and pure-Python ML-KEM / ML-DSA
+│   │   ├── hybrid.py         # X25519 + ML-KEM-768 KEM
+│   │   ├── keys.py           # Server key files (`qedge keys init`)
+│   │   └── transport.py      # Signed handshake, ChaCha20-Poly1305 frames
 │   └── server/
 │       ├── app.py            # FastAPI app factory and endpoints
-│       ├── auth.py           # JWT, PQC provider, middleware
+│       ├── auth.py           # JWT and middleware
 │       ├── settings.py       # Environment settings
 │       └── worker.py         # Celery app and tasks
 ├── tests/                    # Unit and integration tests
+├── bench/crypto.py           # Crypto benchmark -> results/summary/crypto.json
 ├── docs/decisions/           # Architecture decision records
 ├── mobile_app/               # Flutter UI
 ├── demo.py                   # Demo script
@@ -234,15 +251,18 @@ def vqc(params, data):
 
 ### 3. Post-Quantum Security
 
-| Algorithm | Purpose | Security Level |
-|-----------|---------|----------------|
-| **Kyber-1024** | Key Encapsulation | NIST Level 5 |
-| **Dilithium-5** | Digital Signatures | NIST Level 5 |
-| **AES-256-GCM** | Symmetric Encryption | NIST Approved |
+| Primitive | Purpose | NIST category |
+|-----------|---------|---------------|
+| **X25519 + ML-KEM-768** (default), ML-KEM-768, ML-KEM-1024 | Key encapsulation | 3, 3, 5 |
+| **ML-DSA-65** (default), ML-DSA-87 | Client and server signatures | 3, 5 |
+| **ChaCha20-Poly1305** | Frame encryption, header as associated data | n/a |
 
-Without liboqs the code falls back to simulated versions of these primitives
-that provide no security, and the client transport uses its simulated cipher
-by default.
+There is no simulated fallback: a missing backend or missing key file stops the
+server ([ADR 0004](docs/decisions/0004-explicit-crypto-backend.md)). Key and
+ciphertext sizes, timings per backend and the handshake cost are in
+[`results/summary/crypto.json`](results/summary/crypto.json), produced by
+`python bench/crypto.py`. The API endpoints still accept JSON weights; moving
+submissions onto the encrypted channel is part of the backend rework.
 
 ---
 
@@ -270,7 +290,7 @@ by default.
 - [x] Federated Learning Simulation
 - [x] Flutter Mobile App
 - [x] FastAPI Backend
-- [ ] Real PQC with liboqs
+- [x] ML-KEM / ML-DSA through liboqs
 - [ ] Real Dataset Training
 - [ ] Mobile Device Testing
 
