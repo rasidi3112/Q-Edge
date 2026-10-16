@@ -55,8 +55,11 @@ fl = [
 pqc = [
     "liboqs-python>=0.16",
 ]
-# Pure-Python ML-KEM/ML-DSA for tests and CI. Empty until qedge.crypto.backends.pure exists.
-pqc-pure = []
+# Pure-Python ML-KEM/ML-DSA: not constant-time, for tests and CI only.
+pqc-pure = [
+    "dilithium-py>=1.5",
+    "kyber-py>=1.2",
+]
 dev = [
     "httpx>=0.28",
     "mypy>=1.19",
