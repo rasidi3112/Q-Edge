@@ -1,0 +1,415 @@
+{
+  "description": "Final test accuracy of each strategy under Dirichlet label skew.",
+  "setup": {
+    "clients": 10,
+    "rounds": 30,
+    "local_epochs": 1,
+    "client_lr": 0.1,
+    "server_lr": 0.05,
+    "fedprox_mu": 0.01,
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "results": [
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedavg",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9707602262496948,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9736841917037964
+      ],
+      "seconds_mean": 0.6667991113329966
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedavg",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.15502043066711244
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedavg",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9736842115720113,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.15496973600117295
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedprox",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9707602262496948,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9736841917037964
+      ],
+      "seconds_mean": 0.20173256933291364
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedprox",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.1953027223329021
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedprox",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9736842115720113,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.1947935413348508
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedadam",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9795321623484293,
+        "std": 0.01339932553986065
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9912280440330505
+      ],
+      "seconds_mean": 0.1642558750002839
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedadam",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9795321623484293,
+        "std": 0.005064491138837816
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9824561476707458,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.15145281933412966
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedadam",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.14332512499944036
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedyogi",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9795321623484293,
+        "std": 0.01339932553986065
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9912280440330505
+      ],
+      "seconds_mean": 0.16237666666711448
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedyogi",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9795321623484293,
+        "std": 0.005064491138837816
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9824561476707458,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.1597963886645933
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "strategy": "fedyogi",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.13837238866714566
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedavg",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9388888875643412,
+        "std": 0.009622495309758375
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.949999988079071,
+        0.9333333373069763
+      ],
+      "seconds_mean": 0.4897681666673937
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedavg",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9518518447875977,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.949999988079071,
+        0.949999988079071,
+        0.9555555582046509
+      ],
+      "seconds_mean": 0.4968776943314879
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedavg",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9546296199162801,
+        "std": 0.004243123764732606
+      },
+      "per_seed": [
+        0.9555555582046509,
+        0.9583333134651184,
+        0.949999988079071
+      ],
+      "seconds_mean": 0.4962180273323611
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedprox",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9398148059844971,
+        "std": 0.008929301865010864
+      },
+      "per_seed": [
+        0.9361110925674438,
+        0.949999988079071,
+        0.9333333373069763
+      ],
+      "seconds_mean": 0.7369231943327273
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedprox",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9518518447875977,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.949999988079071,
+        0.949999988079071,
+        0.9555555582046509
+      ],
+      "seconds_mean": 0.7368194863326304
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedprox",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9546296199162801,
+        "std": 0.004243123764732606
+      },
+      "per_seed": [
+        0.9555555582046509,
+        0.9583333134651184,
+        0.949999988079071
+      ],
+      "seconds_mean": 0.7160186943328881
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedadam",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.9490740696589152,
+        "std": 0.013127260116340717
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9638888835906982,
+        0.9444444179534912
+      ],
+      "seconds_mean": 0.4917072500005209
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedadam",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.954629639784495,
+        "std": 0.006990589983957895
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9555555582046509,
+        0.9611111283302307
+      ],
+      "seconds_mean": 0.4803863606660646
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedadam",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9592592716217041,
+        "std": 0.008929301865010864
+      },
+      "per_seed": [
+        0.9527778029441833,
+        0.9694444537162781,
+        0.9555555582046509
+      ],
+      "seconds_mean": 0.4822885276674545
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedyogi",
+      "alpha": 0.1,
+      "final_accuracy": {
+        "mean": 0.950000007947286,
+        "std": 0.012729364790753046
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9638888835906982,
+        0.9472222328186035
+      ],
+      "seconds_mean": 0.49025733333231375
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedyogi",
+      "alpha": 0.5,
+      "final_accuracy": {
+        "mean": 0.9555555582046509,
+        "std": 0.009622529722516081
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.9611111283302307,
+        0.9611111283302307
+      ],
+      "seconds_mean": 0.48503483333358116
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "strategy": "fedyogi",
+      "alpha": 100.0,
+      "final_accuracy": {
+        "mean": 0.9592592716217041,
+        "std": 0.008929301865010864
+      },
+      "per_seed": [
+        0.9527778029441833,
+        0.9694444537162781,
+        0.9555555582046509
+      ],
+      "seconds_mean": 0.5005999999993946
+    }
+  ],
+  "environment": {
+    "python": "3.13.5",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "packages": {
+      "q-edge": "0.2.0.dev0",
+      "numpy": "2.5.4",
+      "torch": "2.14.1",
+      "scikit-learn": "1.9.1",
+      "pennylane": "0.45.1",
+      "flwr": "1.40.0"
+    }
+  }
+}

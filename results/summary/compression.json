@@ -1,0 +1,211 @@
+{
+  "description": "Upload bytes vs final accuracy for top-k compression with error feedback.",
+  "setup": {
+    "strategy": "fedavg",
+    "clients": 10,
+    "rounds": 30,
+    "alpha": 0.5,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "bytes_per_kept_entry": 8,
+    "bytes_per_dense_entry": 4
+  },
+  "results": [
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "ratio": 1.0,
+      "bytes_up": 74400,
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "ratio": 0.5,
+      "bytes_up": 74400,
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "ratio": 0.2,
+      "bytes_up": 31200,
+      "final_accuracy": {
+        "mean": 0.9736842115720113,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "ratio": 0.1,
+      "bytes_up": 16800,
+      "final_accuracy": {
+        "mean": 0.9766081770261129,
+        "std": 0.005064491138837816
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "ratio": 0.05,
+      "bytes_up": 9600,
+      "final_accuracy": {
+        "mean": 0.9736842115720113,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9824561476707458,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "model": "logreg",
+      "ratio": 0.01,
+      "bytes_up": 4800,
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "ratio": 1.0,
+      "bytes_up": 1452000,
+      "final_accuracy": {
+        "mean": 0.9518518447875977,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.949999988079071,
+        0.949999988079071,
+        0.9555555582046509
+      ]
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "ratio": 0.5,
+      "bytes_up": 1452000,
+      "final_accuracy": {
+        "mean": 0.9518518447875977,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.949999988079071,
+        0.949999988079071,
+        0.9555555582046509
+      ]
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "ratio": 0.2,
+      "bytes_up": 580800,
+      "final_accuracy": {
+        "mean": 0.9537037213643392,
+        "std": 0.006990589983957895
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9527778029441833,
+        0.9611111283302307
+      ]
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "ratio": 0.1,
+      "bytes_up": 290400,
+      "final_accuracy": {
+        "mean": 0.9555555582046509,
+        "std": 0.010015396882055006
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9527778029441833,
+        0.9666666388511658
+      ]
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "ratio": 0.05,
+      "bytes_up": 146400,
+      "final_accuracy": {
+        "mean": 0.950000007947286,
+        "std": 0.004811247654879188
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9472222328186035,
+        0.9555555582046509
+      ]
+    },
+    {
+      "dataset": "digits",
+      "model": "mlp",
+      "ratio": 0.01,
+      "bytes_up": 33600,
+      "final_accuracy": {
+        "mean": 0.9166666865348816,
+        "std": 0.012108057027097177
+      },
+      "per_seed": [
+        0.9083333611488342,
+        0.9305555820465088,
+        0.9111111164093018
+      ]
+    }
+  ],
+  "environment": {
+    "python": "3.13.5",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "packages": {
+      "q-edge": "0.2.0.dev0",
+      "numpy": "2.5.4",
+      "torch": "2.14.1",
+      "scikit-learn": "1.9.1",
+      "pennylane": "0.45.1",
+      "flwr": "1.40.0"
+    }
+  }
+}

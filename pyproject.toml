@@ -132,7 +132,7 @@ ignore = ["B008", "D105", "D107"]
 convention = "google"
 
 [tool.ruff.lint.isort]
-known-first-party = ["qedge"]
+known-first-party = ["experiments", "qedge"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]

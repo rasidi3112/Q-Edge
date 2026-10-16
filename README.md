@@ -35,7 +35,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 
 | Technology | Description | Status |
 |------------|-------------|--------|
-| **Federated Learning** | Distributed ML without exposing raw data | Simulated |
+| **Federated Learning** | FedAvg, FedProx, FedAdam, FedYogi on non-IID splits | Simulated clients (in-process loop and Flower apps) |
 | **Quantum ML** | Variational Quantum Circuits (VQC) & Quantum Kernel | PennyLane Simulator |
 | **Post-Quantum Crypto** | ML-KEM, ML-DSA (FIPS 203/204), hybrid X25519 | liboqs; carries every client update |
 
@@ -45,7 +45,6 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 
 | Aspect | Classical FL | Quantum-Enhanced FL |
 |--------|--------------|---------------------|
-| **Aggregation** | FedAvg (linear) | Quantum kernel for non-linear patterns |
 | **Privacy** | Differential privacy | + Quantum key distribution potential |
 | **Optimization** | Gradient descent | Variational quantum optimization |
 | **Scalability** | O(n) parameters | Quantum parallelism for high-dim data |
@@ -71,7 +70,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 │   └─────────────┘          └─────────────┘      └───────────┘   │
 │                                                                 │
 │   Security: X25519 + ML-KEM-768, ML-DSA-65 (liboqs)             │
-│   Aggregation: FedAvg + Quantum-Enhanced                        │
+│   Aggregation: FedAvg, FedProx, FedAdam, FedYogi                │
 │   Error Mitigation: Zero-Noise Extrapolation                    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -98,7 +97,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 - Production-ready software
 - Connected to real quantum hardware
 - Audited cryptography (the hybrid KEM and transport are this project's own designs)
-- Trained on real datasets
+- Evaluated beyond small datasets (scikit-learn breast_cancer and digits only)
 
 </td>
 </tr>
@@ -137,7 +136,8 @@ Dependencies are declared only in `pyproject.toml`. Optional extras:
 | Extra | Adds |
 |-------|------|
 | `server` | FastAPI server and Celery worker |
-| `fl` | PyTorch and Flower for `qedge.fl.client` |
+| `fl` | PyTorch, Flower, scikit-learn and PyYAML for `qedge simulate` and the Flower apps |
+| `flower-sim` | Flower's Ray simulation engine, needed only for `flwr run` |
 | `pqc` | liboqs-python (needs the liboqs C library) |
 | `pqc-pure` | kyber-py and dilithium-py: pure Python, not constant-time, tests only |
 | `dev` | pytest, ruff, mypy, pre-commit |
@@ -145,7 +145,9 @@ Dependencies are declared only in `pyproject.toml`. Optional extras:
 ### Development
 
 ```bash
-pip install -e ".[dev,server,pqc-pure]"
+# CPU-only PyTorch first keeps the install small; skip it to get the default build.
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[dev,server,pqc-pure,fl]"
 pre-commit install
 
 ruff check .
@@ -154,6 +156,68 @@ mypy src/qedge
 pytest -m "not slow"   # the suite CI runs on every push
 pytest -m slow         # long-running tests, run weekly in CI
 ```
+
+### Federated simulation
+
+```bash
+qedge simulate --dataset breast_cancer --clients 10 --rounds 30 --alpha 0.5 --strategy fedavg --seed 0
+```
+
+Each run writes `results/runs/<run_id>/config.yaml` (configuration, client
+partition sizes and label counts, package versions, machine) and
+`metrics.jsonl` (test accuracy and loss, mean train loss, bytes up and down
+per round). Clients are simulated in one process; data comes from
+scikit-learn's `breast_cancer` and `digits`, split across clients with a
+per-class Dirichlet(α) draw. The same client and server code also runs as
+Flower apps:
+
+```bash
+pip install -e ".[fl,flower-sim]"
+# ~/.flwr/config.toml: [superlink.local] address = ":local:", options.num-supernodes = 10
+flwr run experiments/flower
+```
+
+Final test accuracy after 30 rounds, 10 clients, mean ± std over seeds 0-2
+([`results/summary/fl_baseline.json`](results/summary/fl_baseline.json),
+`python -m experiments.fl_baseline`, about 30 s on a laptop CPU):
+
+| breast_cancer, logreg | α = 0.1 | α = 0.5 | α = 100 |
+|---|---|---|---|
+| FedAvg | 0.971 ± 0.005 | 0.977 ± 0.010 | 0.974 ± 0.009 |
+| FedProx (μ = 0.01) | 0.971 ± 0.005 | 0.977 ± 0.010 | 0.974 ± 0.009 |
+| FedAdam | 0.980 ± 0.013 | 0.980 ± 0.005 | 0.977 ± 0.010 |
+| FedYogi | 0.980 ± 0.013 | 0.980 ± 0.005 | 0.977 ± 0.010 |
+
+| digits, MLP (16 hidden) | α = 0.1 | α = 0.5 | α = 100 |
+|---|---|---|---|
+| FedAvg | 0.939 ± 0.010 | 0.952 ± 0.003 | 0.955 ± 0.004 |
+| FedProx (μ = 0.01) | 0.940 ± 0.009 | 0.952 ± 0.003 | 0.955 ± 0.004 |
+| FedAdam | 0.949 ± 0.013 | 0.955 ± 0.007 | 0.959 ± 0.009 |
+| FedYogi | 0.950 ± 0.013 | 0.956 ± 0.010 | 0.959 ± 0.009 |
+
+Both datasets are small and easy, so differences between strategies are
+within about one standard deviation. With one local epoch, μ = 0.01 barely
+changes FedProx from FedAvg.
+
+Top-k compression of update deltas with error feedback, FedAvg, α = 0.5
+([`results/summary/compression.json`](results/summary/compression.json)).
+A kept entry costs 8 bytes (index and value), so a keep ratio of 0.5 saves
+nothing:
+
+| Dataset | Keep ratio | Bytes up, 30 rounds | Final accuracy |
+|---|---|---|---|
+| breast_cancer | 1 (dense) | 74,400 | 0.977 ± 0.010 |
+| breast_cancer | 0.1 | 16,800 | 0.977 ± 0.005 |
+| breast_cancer | 0.01 | 4,800 | 0.968 ± 0.005 |
+| digits | 1 (dense) | 1,452,000 | 0.952 ± 0.003 |
+| digits | 0.1 | 290,400 | 0.956 ± 0.010 |
+| digits | 0.01 | 33,600 | 0.917 ± 0.012 |
+
+Earlier versions mixed 30% "quantum" values into every aggregate. Re-created
+in `experiments/ablation_quantum_weight_mixing.py` (5 clients, 15 rounds,
+breast_cancer), it lowers final accuracy from 0.974 ± 0.000 to 0.918 ± 0.013
+([`results/summary/ablation_quantum_weight_mixing.json`](results/summary/ablation_quantum_weight_mixing.json)),
+so it was removed.
 
 ### Running the server
 
@@ -219,10 +283,15 @@ Q-Edge/
 │   │   ├── kernels.py        # Quantum kernel alignment
 │   │   └── zne.py            # Zero-noise extrapolation, readout mitigation
 │   ├── fl/
-│   │   ├── aggregator.py     # Old VQC weight-mixing aggregator; unused by the server
-│   │   ├── client.py         # Flower client (needs the `fl` extra)
+│   │   ├── compression.py    # Top-k with error feedback
+│   │   ├── flower_app.py     # Flower ClientApp and ServerApp
+│   │   ├── models.py         # Logistic regression and MLP (PyTorch)
+│   │   ├── partition.py      # Datasets and Dirichlet split
+│   │   ├── privacy.py        # Update clipping and Gaussian noise (no epsilon)
 │   │   ├── remote.py         # Client for the Q-Edge server API
-│   │   ├── strategies.py     # Aggregation rules (FedAvg)
+│   │   ├── simulation.py     # In-process simulation (`qedge simulate`)
+│   │   ├── strategies.py     # FedAvg, FedAdam, FedYogi
+│   │   ├── training.py       # Local SGD with the FedProx term
 │   │   └── weights.py        # Weight wire format
 │   ├── crypto/
 │   │   ├── backends/         # liboqs and pure-Python ML-KEM / ML-DSA
@@ -240,6 +309,8 @@ Q-Edge/
 │       └── worker.py         # Celery task for bounded circuit runs
 ├── tests/                    # Unit and integration tests
 ├── bench/crypto.py           # Crypto benchmark -> results/summary/crypto.json
+├── experiments/              # FL baseline, compression and ablation scripts; Flower app config
+├── results/summary/          # Committed JSON summaries (results/runs/ is ignored)
 ├── docs/threat-model.md       # Assets, adversaries, what is not protected
 ├── docs/decisions/           # Architecture decision records
 ├── mobile_app/               # Flutter UI
@@ -257,7 +328,7 @@ Q-Edge/
 ```
 Mobile Device A ─┐
                  │    Encrypted
-Mobile Device B ─┼──────────────▶ Q-Edge Server ──▶ Quantum Aggregation
+Mobile Device B ─┼──────────────▶ Q-Edge Server ──▶ FedAvg
                  │    Weights
 Mobile Device C ─┘
 ```
@@ -265,7 +336,7 @@ Mobile Device C ─┘
 ### 2. Quantum Circuit
 
 ```python
-# Variational Quantum Circuit for Global Aggregation
+# Variational quantum circuit (qedge.quantum.circuits)
 @qml.qnode(dev)
 def vqc(params, data):
     # Data encoding
