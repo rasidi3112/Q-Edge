@@ -171,7 +171,7 @@ async def health_check(state: ServerState = Depends(get_state)) -> HealthCheckRe
 
 
 @router.get("/", tags=["Health"])
-async def root():
+async def root() -> dict[str, str]:
     """Return the API name, version and docs path."""
     return {
         "name": "Q-Edge API",

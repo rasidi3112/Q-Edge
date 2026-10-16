@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pennylane as qml
@@ -104,7 +104,7 @@ class QuantumKernelAlignment:
             x1: NDArray[np.float64],
             x2: NDArray[np.float64],
             params: NDArray[np.float64],
-        ) -> NDArray[np.float64]:
+        ) -> Any:
             # Apply U(x2) - encode second data point
             self._apply_feature_map(x2, params, adjoint=False)
 
@@ -255,7 +255,7 @@ class QuantumKernelAlignment:
         if norm_k1 < 1e-10 or norm_k2 < 1e-10:
             return 0.0
 
-        return inner_product / (norm_k1 * norm_k2)
+        return float(inner_product / (norm_k1 * norm_k2))
 
     def align_to_target(
         self,
@@ -357,7 +357,7 @@ class QuantumKernelAlignment:
         n = K.shape[0]
         one_n = np.ones((n, n)) / n
 
-        return K - one_n @ K - K @ one_n + one_n @ K @ one_n
+        return cast(NDArray[np.float64], K - one_n @ K - K @ one_n + one_n @ K @ one_n)
 
     def optimize_for_classification(
         self,
@@ -375,12 +375,7 @@ class QuantumKernelAlignment:
             K_val = self.compute_kernel_matrix(X_val, X_train)
 
             # Simple kernel-based classification (1-NN in kernel space)
-            predictions = []
-            for i in range(len(X_val)):
-                nearest_idx = np.argmax(K_val[i])
-                predictions.append(y_train[nearest_idx])
-
-            predictions = np.array(predictions)
+            predictions = np.array([y_train[np.argmax(K_val[i])] for i in range(len(X_val))])
             accuracy = np.mean(predictions == y_val)
             result["validation_accuracy"] = accuracy
 
@@ -398,16 +393,15 @@ class QuantumKernelAlignment:
         parameters instead.
         """
         # Generate random input pairs
-        fidelities = []
+        samples = []
 
         for _ in range(n_samples):
             x1 = self._rng.uniform(-np.pi, np.pi, self.config.n_qubits)
             x2 = self._rng.uniform(-np.pi, np.pi, self.config.n_qubits)
 
-            fidelity = self.evaluate_kernel(x1, x2)
-            fidelities.append(fidelity)
+            samples.append(self.evaluate_kernel(x1, x2))
 
-        fidelities = np.array(fidelities)
+        fidelities = np.array(samples)
 
         # Expressibility is measured by deviation from Haar distribution
         # For Haar random states, fidelity follows specific distribution

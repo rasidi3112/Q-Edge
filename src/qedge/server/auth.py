@@ -18,12 +18,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
+from starlette.types import ASGIApp
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +195,7 @@ class PQCProvider:
     def _decapsulate_oqs(self, ciphertext: bytes, keypair: PQCKeyPair) -> bytes:
         alg_name = self._get_oqs_algorithm_name(keypair.algorithm)
         kem = self._oqs.KeyEncapsulation(alg_name, keypair.private_key)
-        return kem.decap_secret(ciphertext)
+        return cast(bytes, kem.decap_secret(ciphertext))
 
     def _decapsulate_simulated(self, ciphertext: bytes, keypair: PQCKeyPair) -> bytes:
         return hashlib.sha256(keypair.public_key + b"simulated_encap").digest()
@@ -212,7 +214,7 @@ class PQCProvider:
     def _sign_oqs(self, message: bytes, keypair: PQCKeyPair) -> bytes:
         alg_name = self._get_oqs_algorithm_name(keypair.algorithm)
         sig = self._oqs.Signature(alg_name, keypair.private_key)
-        return sig.sign(message)
+        return cast(bytes, sig.sign(message))
 
     def _sign_simulated(self, message: bytes, keypair: PQCKeyPair) -> bytes:
         # Simulated: HMAC-SHA256, not a public-key signature.
@@ -240,7 +242,7 @@ class PQCProvider:
     ) -> bool:
         alg_name = self._get_oqs_algorithm_name(algorithm)
         sig = self._oqs.Signature(alg_name)
-        return sig.verify(message, signature, public_key)
+        return bool(sig.verify(message, signature, public_key))
 
     def _verify_simulated(
         self,
@@ -291,8 +293,7 @@ def create_jwt_token(
         "type": "access",
     }
 
-    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
-    return encoded_jwt
+    return cast(str, jwt.encode(to_encode, secret_key, algorithm=algorithm))
 
 
 def verify_jwt_token(token: str) -> dict[str, Any]:
@@ -305,8 +306,7 @@ def verify_jwt_token(token: str) -> dict[str, Any]:
     algorithm = os.getenv("JWT_ALGORITHM", "HS256")
 
     try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        return payload
+        return cast(dict[str, Any], jwt.decode(token, secret_key, algorithms=[algorithm]))
 
     except JWTError as e:
         raise HTTPException(
@@ -323,7 +323,7 @@ class PQCAuthMiddleware(BaseHTTPMiddleware):
     headers, so ``X-PQC-Protected: true`` carries no meaning.
     """
 
-    def __init__(self, app, excluded_paths: list | None = None) -> None:
+    def __init__(self, app: ASGIApp, excluded_paths: list[str] | None = None) -> None:
         super().__init__(app)
         self.pqc_provider = PQCProvider()
         self.excluded_paths = excluded_paths or [
@@ -335,7 +335,7 @@ class PQCAuthMiddleware(BaseHTTPMiddleware):
             "/auth/register",
         ]
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Reject requests whose ``X-PQC-Timestamp`` is more than 300 s off; pass all others."""
         # Skip excluded paths
         if request.url.path in self.excluded_paths:

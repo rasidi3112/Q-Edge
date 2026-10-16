@@ -131,14 +131,16 @@ class MobileFlowerClient:
 
         # Initialize PQC transport
         if config.enable_pqc:
-            self.pqc_transport = PQCTransportLayer(client_id=config.client_id)
+            self.pqc_transport: PQCTransportLayer | None = PQCTransportLayer(
+                client_id=config.client_id
+            )
         else:
             self.pqc_transport = None
 
         # Training state
-        self._local_data: tuple[NDArray, NDArray] | None = None
+        self._local_data: tuple[NDArray[Any], NDArray[Any]] | None = None
         self._optimizer: optim.Optimizer | None = None
-        self._criterion = nn.CrossEntropyLoss() if TORCH_AVAILABLE else None
+        self._criterion = nn.CrossEntropyLoss()
 
         # Metrics tracking
         self.training_history: list[dict[str, Any]] = []
@@ -166,14 +168,14 @@ class MobileFlowerClient:
 
         logger.info(f"Set local data: {len(self._local_data[0])} train, {n_val} validation samples")
 
-    def get_parameters(self) -> list[NDArray]:
+    def get_parameters(self) -> list[NDArray[Any]]:
         """Return model parameters as NumPy arrays in ``model.parameters()`` order."""
         if self.model is None:
             return []
 
         return [param.detach().cpu().numpy() for param in self.model.parameters()]
 
-    def set_parameters(self, parameters: list[NDArray]) -> None:
+    def set_parameters(self, parameters: list[NDArray[Any]]) -> None:
         """Load arrays produced by `get_parameters`.
 
         Raises:
@@ -191,8 +193,8 @@ class MobileFlowerClient:
 
     def _create_data_loader(
         self,
-        X: NDArray,
-        y: NDArray,
+        X: NDArray[Any],
+        y: NDArray[Any],
         batch_size: int | None = None,
     ) -> DataLoader:
         if not TORCH_AVAILABLE:
@@ -218,7 +220,7 @@ class MobileFlowerClient:
     def train_local(
         self,
         epochs: int | None = None,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """Train for ``epochs`` (default ``config.local_epochs``) with Adam.
 
         Returns:
@@ -296,8 +298,8 @@ class MobileFlowerClient:
 
     def _evaluate(
         self,
-        X: NDArray,
-        y: NDArray,
+        X: NDArray[Any],
+        y: NDArray[Any],
     ) -> dict[str, float]:
         if self.model is None:
             return {}
@@ -323,8 +325,8 @@ class MobileFlowerClient:
 
     def compress_gradients(
         self,
-        parameters: list[NDArray],
-    ) -> list[NDArray]:
+        parameters: list[NDArray[Any]],
+    ) -> list[NDArray[Any]]:
         """Keep the largest ``compression_ratio`` fraction of each array by magnitude.
 
         The remaining entries are set to zero. Despite the name this is applied to
@@ -353,7 +355,7 @@ class MobileFlowerClient:
 
     def encrypt_weights(
         self,
-        parameters: list[NDArray],
+        parameters: list[NDArray[Any]],
     ) -> bytes:
         """Encrypt with the transport, or pickle without encryption when PQC is disabled."""
         if self.pqc_transport is None:
@@ -420,15 +422,15 @@ class FlowerClientAdapter(NumPyClient):
             "battery_aware": str(self.mobile_client.config.battery_aware),
         }
 
-    def get_parameters(self, config: dict[str, Scalar]) -> list[NDArray]:
+    def get_parameters(self, config: dict[str, Scalar]) -> list[NDArray[Any]]:
         """Return the wrapped client's parameters."""
         return self.mobile_client.get_parameters()
 
     def fit(
         self,
-        parameters: list[NDArray],
+        parameters: list[NDArray[Any]],
         config: dict[str, Scalar],
-    ) -> tuple[list[NDArray], int, dict[str, Scalar]]:
+    ) -> tuple[list[NDArray[Any]], int, dict[str, Scalar]]:
         """Load global parameters, train locally and return the compressed parameters."""
         # Set global parameters
         self.mobile_client.set_parameters(parameters)
@@ -458,7 +460,7 @@ class FlowerClientAdapter(NumPyClient):
 
     def evaluate(
         self,
-        parameters: list[NDArray],
+        parameters: list[NDArray[Any]],
         config: dict[str, Scalar],
     ) -> tuple[float, int, dict[str, Scalar]]:
         """Return validation loss, sample count and accuracy for ``parameters``."""
@@ -531,6 +533,8 @@ def run_simulation(
             if client.config.compress_gradients:
                 updates = client.compress_gradients(updates)
 
+            if client._local_data is None:
+                raise RuntimeError(f"{client.config.client_id} has no local data")
             n_samples = client._local_data[0].shape[0]
             all_updates.append((updates, n_samples))
             total_samples += n_samples
@@ -556,7 +560,7 @@ def run_simulation(
     logger.info("Simulation complete!")
 
 
-def main():
+def main() -> None:
     """Command-line entry point; both modes generate random local data."""
     parser = argparse.ArgumentParser(description="Q-Edge Mobile Federated Learning Client")
     parser.add_argument(

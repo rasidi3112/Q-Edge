@@ -11,11 +11,11 @@ the server, and FEDOPT takes a fixed step of 0.01 toward the FedAvg result.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -114,7 +114,7 @@ class QuantumGlobalAggregator:
             zne_config = ZNEConfig(
                 scale_factors=list(config.zne_scale_factors),
             )
-            self.zne = ZeroNoiseExtrapolation(zne_config)
+            self.zne: ZeroNoiseExtrapolation | None = ZeroNoiseExtrapolation(zne_config)
         else:
             self.zne = None
 
@@ -122,6 +122,7 @@ class QuantumGlobalAggregator:
         self.global_state: GlobalModelState | None = None
         self.round_history: list[GlobalModelState] = []
         self._current_round = 0
+        self._prev_kernel_matrix: NDArray[np.float64] | None = None
 
         logger.info(
             f"Initialized QuantumGlobalAggregator: "
@@ -230,7 +231,7 @@ class QuantumGlobalAggregator:
     def _expand_weights(
         self,
         compressed: NDArray[np.float64],
-        original_shape: tuple,
+        original_shape: tuple[int, ...],
     ) -> NDArray[np.float64]:
         n_elements = np.prod(original_shape)
         target_dim = len(compressed)
@@ -266,7 +267,7 @@ class QuantumGlobalAggregator:
         # Take first n_qubits features
         quantum_encoding = quantum_features[: self.config.n_qubits]
 
-        return quantum_encoding
+        return cast(NDArray[np.float64], quantum_encoding)
 
     def _compute_kernel_distance(
         self,
@@ -283,7 +284,7 @@ class QuantumGlobalAggregator:
     def _apply_error_mitigation(
         self,
         circuit_output: NDArray[np.float64],
-        circuit_fn: callable,
+        circuit_fn: Callable[..., Any],
         params: NDArray[np.float64],
     ) -> NDArray[np.float64]:
         if self.zne is None:
@@ -372,7 +373,7 @@ class QuantumGlobalAggregator:
         metrics["hybrid_norm"] = float(np.linalg.norm(hybrid_weights))
 
         # Step 6: Compute kernel alignment quality
-        if hasattr(self, "_prev_kernel_matrix") and self._prev_kernel_matrix is not None:
+        if self._prev_kernel_matrix is not None:
             alignment = self.qka.kernel_alignment_score(kernel_matrix, self._prev_kernel_matrix)
             metrics["kernel_alignment"] = float(alignment)
         self._prev_kernel_matrix = kernel_matrix

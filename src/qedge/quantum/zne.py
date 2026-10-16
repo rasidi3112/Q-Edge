@@ -179,7 +179,7 @@ class ZeroNoiseExtrapolation:
 
     def execute_at_scale(
         self,
-        circuit: Callable,
+        circuit: Callable[..., Any],
         params: Any,
         scale_factor: float,
         device: qml.Device,
@@ -225,7 +225,7 @@ class ZeroNoiseExtrapolation:
         scales: NDArray[np.float64],
         values: NDArray[np.float64],
     ) -> float:
-        def exp_model(x: NDArray, a: float, b: float, c: float) -> NDArray:
+        def exp_model(x: NDArray[np.float64], a: float, b: float, c: float) -> NDArray[np.float64]:
             return a * np.exp(-b * x) + c
 
         try:
@@ -345,12 +345,13 @@ class ZeroNoiseExtrapolation:
             mitigated, method_name = self._select_best_method(scales, values)
 
         # Estimate confidence based on residuals
+        confidence: float
         if method_name in ["linear", "polynomial"]:
             degree = 1 if method_name == "linear" else self.config.poly_degree
             coeffs = np.polyfit(scales, values, degree)
             predicted = np.polyval(coeffs, scales)
             residuals = values - predicted
-            confidence = 1.0 / (1.0 + np.std(residuals))
+            confidence = float(1.0 / (1.0 + np.std(residuals)))
         else:
             confidence = 0.8  # Default confidence for other methods
 
@@ -368,7 +369,7 @@ class ZeroNoiseExtrapolation:
 
     def mitigate(
         self,
-        circuit: Callable,
+        circuit: qml.QNode,
         params: Any,
         device: qml.Device | None = None,
     ) -> dict[str, Any]:
@@ -441,7 +442,7 @@ class MeasurementErrorMitigation:
         self.calibration_matrix = np.zeros((n_states, n_states))
 
         @qml.qnode(device)
-        def calibration_circuit(basis_state: int) -> NDArray:
+        def calibration_circuit(basis_state: int) -> Any:
             # Prepare |basis_state⟩ using X gates
             for qubit in range(self.n_qubits):
                 if (basis_state >> qubit) & 1:
@@ -468,17 +469,18 @@ class MeasurementErrorMitigation:
         Raises:
             RuntimeError: If `calibrate` has not been called.
         """
-        if not self._is_calibrated:
+        calibration, inverse = self.calibration_matrix, self.inverse_matrix
+        if not self._is_calibrated or calibration is None or inverse is None:
             raise RuntimeError("Must call calibrate() before mitigating")
 
         if self.method == "inverse":
-            mitigated = self.inverse_matrix @ measured_probs
+            mitigated = inverse @ measured_probs
         elif self.method == "least_squares":
             # Constrained least squares (non-negative, sums to 1)
             from scipy.optimize import minimize
 
-            def objective(p: NDArray) -> float:
-                return float(np.sum((self.calibration_matrix @ p - measured_probs) ** 2))
+            def objective(p: NDArray[np.float64]) -> float:
+                return float(np.sum((calibration @ p - measured_probs) ** 2))
 
             constraints = [{"type": "eq", "fun": lambda p: np.sum(p) - 1.0}]
             bounds = [(0, 1) for _ in range(len(measured_probs))]
@@ -495,9 +497,7 @@ class MeasurementErrorMitigation:
             # method == "iterative"
             mitigated = measured_probs.copy()
             for _ in range(10):
-                correction = self.inverse_matrix @ (
-                    measured_probs - self.calibration_matrix @ mitigated
-                )
+                correction = inverse @ (measured_probs - calibration @ mitigated)
                 mitigated = mitigated + 0.5 * correction
                 mitigated = np.clip(mitigated, 0, 1)
                 mitigated = mitigated / np.sum(mitigated)

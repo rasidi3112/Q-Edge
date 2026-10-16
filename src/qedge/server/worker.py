@@ -73,25 +73,41 @@ class QuantumTask(Task):
     retry_backoff_max = 600
     retry_jitter = True
 
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
+    def on_failure(
+        self,
+        exc: BaseException,
+        task_id: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        einfo: Any,
+    ) -> None:
         """Log the failure with its traceback."""
         logger.error(
             f"Quantum task {task_id} failed: {exc}",
             exc_info=einfo,
         )
 
-    def on_success(self, retval, task_id, args, kwargs):
+    def on_success(
+        self, retval: Any, task_id: str, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> None:
         """Log completion."""
         logger.info(f"Quantum task {task_id} completed successfully")
 
-    def on_retry(self, exc, task_id, args, kwargs, einfo):
+    def on_retry(
+        self,
+        exc: BaseException,
+        task_id: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        einfo: Any,
+    ) -> None:
         """Log the retry."""
         logger.warning(f"Quantum task {task_id} retrying: {exc}")
 
 
 @celery_app.task(base=QuantumTask, bind=True, name="submit_quantum_aggregation")
 def submit_quantum_aggregation(
-    self,
+    self: QuantumTask,
     circuit_type: str,
     parameters: dict[str, Any],
     shots: int = 1024,
@@ -187,7 +203,7 @@ def submit_quantum_aggregation(
 
 @celery_app.task(base=QuantumTask, bind=True, name="execute_quantum_circuit")
 def execute_quantum_circuit(
-    self,
+    self: QuantumTask,
     circuit_definition: dict[str, Any],
     shots: int = 1024,
 ) -> dict[str, Any]:
@@ -259,9 +275,9 @@ def execute_quantum_circuit(
 
 @celery_app.task(bind=True, name="process_federated_update")
 def process_federated_update(
-    self,
+    self: Task,
     client_id: str,
-    weights: list,
+    weights: list[float],
     n_samples: int,
     local_loss: float,
 ) -> dict[str, Any]:
@@ -337,7 +353,7 @@ def get_task_status(task_id: str) -> dict[str, Any]:
     return status_info
 
 
-def run_worker():
+def run_worker() -> None:
     """Start a worker that consumes the quantum, federated and default queues."""
     celery_app.worker_main(
         [

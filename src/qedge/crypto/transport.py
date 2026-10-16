@@ -18,7 +18,7 @@ import secrets
 import struct
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from numpy.typing import NDArray
 
@@ -88,6 +88,8 @@ class PQCTransportLayer:
         logger.info(f"Initialized PQCTransportLayer for client: {client_id}")
 
     def _init_signing_keypair(self) -> None:
+        self._signing_public_key: bytes
+        self._signing_private_key: bytes
         if self._oqs_available and not self.use_simulation:
             sig = self._oqs.Signature("Dilithium5")
             self._signing_public_key = sig.generate_keypair()
@@ -163,7 +165,7 @@ class PQCTransportLayer:
 
     def encrypt_weights(
         self,
-        weights: list[NDArray],
+        weights: list[NDArray[Any]],
     ) -> bytes:
         """Pickle, zlib-compress and encrypt a list of arrays.
 
@@ -186,7 +188,7 @@ class PQCTransportLayer:
     def decrypt_weights(
         self,
         ciphertext: bytes,
-    ) -> list[NDArray]:
+    ) -> list[NDArray[Any]]:
         """Reverse `encrypt_weights`.
 
         Calls ``pickle.loads`` on the decrypted bytes, which runs code chosen by whoever
@@ -207,7 +209,7 @@ class PQCTransportLayer:
         serialized = zlib.decompress(compressed)
 
         # Deserialize
-        return pickle.loads(serialized)
+        return cast(list[NDArray[Any]], pickle.loads(serialized))
 
     def _encrypt(
         self,
@@ -290,7 +292,7 @@ class PQCTransportLayer:
         """Sign ``data`` with Dilithium5, or with HMAC-SHA512 in simulated mode."""
         if self._oqs_available and not self.use_simulation:
             sig = self._oqs.Signature("Dilithium5", self._signing_private_key)
-            return sig.sign(data)
+            return cast(bytes, sig.sign(data))
         else:
             # Simulated signature using HMAC
             return hmac.new(
@@ -312,7 +314,7 @@ class PQCTransportLayer:
         """
         if self._oqs_available and not self.use_simulation:
             sig = self._oqs.Signature("Dilithium5")
-            return sig.verify(data, signature, public_key)
+            return bool(sig.verify(data, signature, public_key))
         else:
             # Simulated verification (check signature length)
             return len(signature) >= 64

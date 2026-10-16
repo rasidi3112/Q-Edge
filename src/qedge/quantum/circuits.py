@@ -6,7 +6,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pennylane as qml
@@ -136,7 +136,7 @@ class VariationalQuantumCircuit:
         def circuit(
             params: NDArray[np.float64],
             features: NDArray[np.float64],
-        ) -> NDArray[np.float64]:
+        ) -> Any:
             # Feature encoding using angle embedding
             self._encode_features(features)
 
@@ -228,7 +228,7 @@ class VariationalQuantumCircuit:
             for i in range(offset, n_qubits - 1, 2):
                 qml.CNOT(wires=[i, i + 1])
 
-    def _measure(self) -> NDArray[np.float64]:
+    def _measure(self) -> Any:
         return qml.probs(wires=range(self.config.n_qubits))
 
     @property
@@ -265,7 +265,7 @@ class VariationalQuantumCircuit:
         elif len(features) > self.config.n_qubits:
             features = features[: self.config.n_qubits]
 
-        return self._circuit(params, features)
+        return cast(NDArray[np.float64], self._circuit(params, features))
 
     def batch_forward(
         self,
