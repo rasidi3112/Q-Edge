@@ -140,8 +140,6 @@ known-first-party = ["experiments", "qedge"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
-# demo.py predates these rules and prints emoji; it is replaced by a CLI demo later.
-"demo.py" = ["D", "RUF001"]
 # The report writes Greek letters (alpha, beta) into Markdown tables on purpose.
 "experiments/report.py" = ["RUF001"]
 

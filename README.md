@@ -117,8 +117,8 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 # Core quantum and aggregation modules
 pip install -e .
 
-# Run demo
-python demo.py
+# Run one pass of each component
+qedge demo
 ```
 
 Dependencies are declared only in `pyproject.toml`. Optional extras:
@@ -432,7 +432,6 @@ Q-Edge/
 ├── docs/threat-model.md       # Assets, adversaries, what is not protected
 ├── docs/decisions/           # Architecture decision records
 ├── mobile_app/               # Flutter dashboard (read-only, REST and SSE)
-├── demo.py                   # Demo script
 ├── Dockerfile                # Targets: api, worker
 └── docker-compose.yml        # API, worker, Redis
 ```

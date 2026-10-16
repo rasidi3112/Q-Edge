@@ -1,4 +1,4 @@
-"""Command-line entry point: ``qedge keys``, ``qedge clients`` and ``qedge simulate``.
+"""Command-line entry point: ``qedge keys``, ``clients``, ``simulate`` and ``demo``.
 
 Server and FL modules are imported inside their commands so that each
 command needs only its own extra (``server`` or ``fl``).
@@ -116,6 +116,11 @@ def _parser() -> argparse.ArgumentParser:
     head.add_argument("--zne-scales", type=float, nargs="+", help="odd integers, e.g. 1 3 5")
     head.add_argument("--zne-order", type=int, help="order for --zne poly")
     head.add_argument("--encoder-hidden", type=int)
+
+    demo = commands.add_parser("demo", help="run each component once and print the results")
+    demo.add_argument(
+        "--backend", choices=BACKENDS, help="crypto backend (default: liboqs if installed)"
+    )
     return parser
 
 
@@ -154,6 +159,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _clients(args)
     if args.command == "simulate":
         return _simulate(args)
+    if args.command == "demo":
+        from qedge.demo import run_demo
+
+        return run_demo(sys.stdout, args.backend)
     try:
         if args.action == "init":
             keys = generate_server_keys(
