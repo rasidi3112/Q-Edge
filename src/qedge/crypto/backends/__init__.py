@@ -16,10 +16,17 @@ BACKENDS = ("liboqs", "pure")
 def get_kem(algorithm: str, backend: str) -> Kem:
     """Return the KEM ``algorithm`` from ``backend``.
 
+    ``"X25519-ML-KEM-768"`` returns the hybrid KEM built on the backend's
+    ML-KEM-768.
+
     Raises:
         BackendUnavailableError: If the backend is unknown, not installed, or
             lacks the algorithm.
     """
+    from qedge.crypto.hybrid import HYBRID_X25519_ML_KEM_768, HybridKem
+
+    if algorithm == HYBRID_X25519_ML_KEM_768:
+        return HybridKem(get_kem("ML-KEM-768", backend))
     if backend == "liboqs":
         from qedge.crypto.backends.liboqs import LiboqsKem
 

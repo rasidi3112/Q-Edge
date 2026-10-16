@@ -9,7 +9,7 @@ from qedge.crypto.errors import BackendUnavailableError, InvalidCiphertextError,
 # (public key, secret key, ciphertext or signature) sizes from FIPS 203 and FIPS 204.
 FIPS_KEM_SIZES = {"ML-KEM-768": (1184, 2400, 1088), "ML-KEM-1024": (1568, 3168, 1568)}
 FIPS_SIG_SIZES = {"ML-DSA-65": (1952, 4032, 3309), "ML-DSA-87": (2592, 4896, 4627)}
-KEMS = list(FIPS_KEM_SIZES)
+KEMS = [*FIPS_KEM_SIZES, "X25519-ML-KEM-768"]
 
 
 @pytest.mark.parametrize("algorithm", KEMS)
