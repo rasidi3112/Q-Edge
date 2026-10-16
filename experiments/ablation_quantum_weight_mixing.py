@@ -8,10 +8,11 @@ scaled them to ``[-1, 0]`` and spread them back over the weight vector in
 blocks. This script re-creates that rule and compares it with plain FedAvg on
 the same partitions and seeds.
 
-Writes results/summary/ablation_quantum_weight_mixing.json (or ``--output``).
+Setup from ``configs/ablation_quantum_weight_mixing.yaml``: breast_cancer,
+logistic regression, clients, rounds, alpha and seeds.
 
 Usage:
-    python -m experiments.ablation_quantum_weight_mixing [--seeds 0 1 2] [--output PATH]
+    python -m experiments.ablation_quantum_weight_mixing [--config PATH]
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import numpy as np
 import pennylane as qml
 from numpy.typing import NDArray
 
-from experiments.common import mean_std, write_summary
+from experiments.common import load_config, mean_std, write_summary
 from qedge.fl.simulation import SimulationConfig, run_simulation
 from qedge.fl.strategies import Weights, fedavg
 
@@ -105,22 +106,24 @@ class QuantumWeightMixing:
 def main() -> None:
     """Run both rules for each seed and write the summary JSON."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    parser.add_argument(
-        "--output", type=Path, default=Path("results/summary/ablation_quantum_weight_mixing.json")
-    )
-    args = parser.parse_args()
+    parser.add_argument("--config", type=Path)
+    config = load_config("ablation_quantum_weight_mixing", parser.parse_args().config)
 
     runs: dict[str, list[dict[str, Any]]] = {"fedavg": [], "quantum_weight_mixing": []}
-    for seed in args.seeds:
-        config = SimulationConfig(
-            dataset="breast_cancer", model="logreg", clients=5, rounds=15, alpha=0.5, seed=seed
+    for seed in config["seeds"]:
+        simulation = SimulationConfig(
+            dataset="breast_cancer",
+            model="logreg",
+            clients=config["clients"],
+            rounds=config["rounds"],
+            alpha=config["alpha"],
+            seed=seed,
         )
         for rule, aggregator in (
             ("fedavg", None),
             ("quantum_weight_mixing", QuantumWeightMixing(seed)),
         ):
-            summary = run_simulation(config, aggregator=aggregator)
+            summary = run_simulation(simulation, aggregator=aggregator)
             runs[rule].append(
                 {
                     "seed": seed,
@@ -132,22 +135,13 @@ def main() -> None:
 
     result = {
         "description": __doc__.splitlines()[0],
-        "setup": {
-            "dataset": "breast_cancer",
-            "model": "logreg",
-            "clients": 5,
-            "rounds": 15,
-            "alpha": 0.5,
-            "seeds": args.seeds,
-            "classical_weight": CLASSICAL_WEIGHT,
-            "n_qubits": N_QUBITS,
-        },
+        "setup": {"classical_weight": CLASSICAL_WEIGHT, "n_qubits": N_QUBITS},
         "final_accuracy": {
             rule: mean_std([r["final_accuracy"] for r in rows]) for rule, rows in runs.items()
         },
         "runs": runs,
     }
-    write_summary(args.output, result)
+    write_summary(Path(config["output"]), result, config)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+output: results/summary/quantum_diagnostics.json
+widths: [2, 4, 6, 8]
+gradient: {layers: 8, samples: 200}
+kernel: {samples: 40}
+expressibility: {n_qubits: 4, layers: [1, 2, 3, 4], pairs: 500}

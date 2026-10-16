@@ -1,11 +1,11 @@
-"""Final test accuracy of each strategy under Dirichlet label skew.
+"""Final accuracy of each strategy under Dirichlet label skew.
 
-Grid: datasets breast_cancer (logreg) and digits (mlp), strategies fedavg,
-fedprox, fedadam and fedyogi, alpha in {0.1, 0.5, 100}, 10 clients, 30
-rounds, one local epoch, seeds 0-2. Writes results/summary/fl_baseline.json.
+Grid from ``configs/fl_baseline.yaml``: (dataset, model) setups, strategies,
+alphas and seeds; one local epoch, client lr 0.1, server lr 0.05, FedProx mu
+0.01.
 
 Usage:
-    python -m experiments.fl_baseline [--seeds 0 1 2] [--output PATH]
+    python -m experiments.fl_baseline [--config PATH]
 """
 
 from __future__ import annotations
@@ -14,30 +14,33 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from experiments.common import mean_std, write_summary
-from qedge.fl.simulation import STRATEGIES, SimulationConfig, run_simulation
-
-SETUPS = (("breast_cancer", "logreg"), ("digits", "mlp"))
-ALPHAS = (0.1, 0.5, 100.0)
+from experiments.common import load_config, mean_std, write_summary
+from qedge.fl.simulation import SimulationConfig, run_simulation
 
 
 def main() -> None:
     """Run the grid and write the summary JSON."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    parser.add_argument("--output", type=Path, default=Path("results/summary/fl_baseline.json"))
-    args = parser.parse_args()
+    parser.add_argument("--config", type=Path)
+    config = load_config("fl_baseline", parser.parse_args().config)
 
     rows: list[dict[str, Any]] = []
-    for dataset, model in SETUPS:
-        for strategy in STRATEGIES:
-            for alpha in ALPHAS:
+    for dataset, model in config["setups"]:
+        for strategy in config["strategies"]:
+            for alpha in config["alphas"]:
                 finals, seconds = [], []
-                for seed in args.seeds:
-                    config = SimulationConfig(
-                        dataset=dataset, model=model, strategy=strategy, alpha=alpha, seed=seed
+                for seed in config["seeds"]:
+                    summary = run_simulation(
+                        SimulationConfig(
+                            dataset=dataset,
+                            model=model,
+                            strategy=strategy,
+                            alpha=alpha,
+                            seed=seed,
+                            clients=config["clients"],
+                            rounds=config["rounds"],
+                        )
                     )
-                    summary = run_simulation(config)
                     finals.append(summary["final_accuracy"])
                     seconds.append(summary["seconds"])
                 stats = mean_std(finals)
@@ -58,20 +61,7 @@ def main() -> None:
                 )
 
     write_summary(
-        args.output,
-        {
-            "description": __doc__.splitlines()[0],
-            "setup": {
-                "clients": 10,
-                "rounds": 30,
-                "local_epochs": 1,
-                "client_lr": 0.1,
-                "server_lr": 0.05,
-                "fedprox_mu": 0.01,
-                "seeds": args.seeds,
-            },
-            "results": rows,
-        },
+        Path(config["output"]), {"description": __doc__.splitlines()[0], "results": rows}, config
     )
 
 

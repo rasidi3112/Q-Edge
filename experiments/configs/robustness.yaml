@@ -1,0 +1,10 @@
+output: results/summary/robustness.json
+setups: [[breast_cancer, logreg], [digits, mlp]]
+attacks: [label_flip, scaling, random_noise, fake_samples]
+fractions: [0.0, 0.1, 0.2, 0.3]
+# null is plain FedAvg; the others use their default options.
+rules: [null, median, trimmed_mean, krum, multi_krum, norm_clip, bounded]
+seeds: [0, 1, 2]
+clients: 10
+rounds: 30
+alpha: 0.5

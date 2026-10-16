@@ -1,0 +1,5 @@
+output: results/summary/ablation_quantum_weight_mixing.json
+seeds: [0, 1, 2]
+clients: 5
+rounds: 15
+alpha: 0.5

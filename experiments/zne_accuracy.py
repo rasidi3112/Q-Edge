@@ -4,10 +4,11 @@
 entangling layers), observable Z0 Z1, depolarizing and amplitude damping
 noise with p in {0.001, 0.01}, scale factors 1, 3, 5 with Richardson,
 quadratic and exponential extrapolation. The error is the absolute
-difference from the noiseless value. Writes results/summary/zne.json.
+difference from the noiseless value. The number of circuits and the noise
+probabilities come from ``configs/zne.yaml``.
 
 Usage:
-    python -m experiments.zne_accuracy [--circuits N] [--output PATH]
+    python -m experiments.zne_accuracy [--config PATH]
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import Any
 import numpy as np
 import pennylane as qml
 
-from experiments.common import mean_std, write_summary
+from experiments.common import load_config, mean_std, write_summary
 from qedge.quantum.circuits import variational_block, weight_shape
 from qedge.quantum.noise import CHANNELS, NoiseConfig, make_device
 from qedge.quantum.zne import ZNEConfig, estimate
@@ -43,27 +44,26 @@ def circuit(inputs: Any, weights: Any) -> Any:
 def main() -> None:
     """Measure unmitigated and mitigated errors and write the summary JSON."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--circuits", type=int, default=20)
-    parser.add_argument("--output", type=Path, default=Path("results/summary/zne.json"))
-    args = parser.parse_args()
+    parser.add_argument("--config", type=Path)
+    config = load_config("zne", parser.parse_args().config)
 
     rng = np.random.default_rng(0)
     shape = weight_shape("strongly_entangling", 2, N_QUBITS)
     draws = [
         (rng.uniform(-np.pi, np.pi, N_QUBITS), rng.uniform(0, 2 * np.pi, shape))
-        for _ in range(args.circuits)
+        for _ in range(config["circuits"])
     ]
     ideal_qnode = qml.QNode(circuit, make_device(N_QUBITS, NoiseConfig()))
     ideal = [float(ideal_qnode(x, w)) for x, w in draws]
 
     rows = []
     for channel in CHANNELS:
-        for p in (0.001, 0.01):
+        for p in config["probabilities"]:
             noisy = qml.QNode(circuit, make_device(N_QUBITS, NoiseConfig(p=p, channel=channel)))
             errors: dict[str, list[float]] = {"unmitigated": [], **{m: [] for m in CONFIGS}}
             for (x, w), target in zip(draws, ideal, strict=True):
-                for method, config in CONFIGS.items():
-                    result = estimate(noisy, (x, w), config)
+                for method, zne_config in CONFIGS.items():
+                    result = estimate(noisy, (x, w), zne_config)
                     errors[method].append(abs(result.mitigated - target))
                 errors["unmitigated"].append(abs(result.unmitigated - target))
             row = {
@@ -76,19 +76,20 @@ def main() -> None:
             print(f"{channel:18} p={p:<6g} {summary}")
 
     write_summary(
-        args.output,
+        Path(config["output"]),
         {
             "description": __doc__.splitlines()[0],
             "setup": {
                 "n_qubits": N_QUBITS,
                 "layers": 2,
-                "circuits": args.circuits,
+                "circuits": config["circuits"],
                 "observable": "Z0 Z1",
                 "scale_factors": [1, 3, 5],
                 "folding": "global",
             },
             "results": rows,
         },
+        config,
     )
 
 

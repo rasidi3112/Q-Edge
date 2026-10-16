@@ -1,0 +1,7 @@
+output: results/summary/fl_baseline.json
+setups: [[breast_cancer, logreg], [digits, mlp]]
+strategies: [fedavg, fedprox, fedadam, fedyogi]
+alphas: [0.1, 0.5, 100.0]
+seeds: [0, 1, 2]
+clients: 10
+rounds: 30

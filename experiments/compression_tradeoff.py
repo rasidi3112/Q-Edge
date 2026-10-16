@@ -1,11 +1,11 @@
 """Upload bytes vs final accuracy for top-k compression with error feedback.
 
-FedAvg, 10 clients, 30 rounds, alpha 0.5, seeds 0-2, on breast_cancer
-(logreg) and digits (mlp), with keep ratios 1 (dense), 0.5, 0.2, 0.1, 0.05
-and 0.01. Writes results/summary/compression.json.
+Grid from ``configs/compression.yaml``: (dataset, model) setups, keep ratios
+(null is dense) and seeds, with FedAvg. A kept entry costs 8 bytes (index
+and float32 value), a dense entry 4.
 
 Usage:
-    python -m experiments.compression_tradeoff [--seeds 0 1 2] [--output PATH]
+    python -m experiments.compression_tradeoff [--config PATH]
 """
 
 from __future__ import annotations
@@ -14,29 +14,32 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from experiments.common import mean_std, write_summary
+from experiments.common import load_config, mean_std, write_summary
 from qedge.fl.simulation import SimulationConfig, run_simulation
-
-SETUPS = (("breast_cancer", "logreg"), ("digits", "mlp"))
-RATIOS: tuple[float | None, ...] = (None, 0.5, 0.2, 0.1, 0.05, 0.01)
 
 
 def main() -> None:
     """Run every ratio and write the summary JSON."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    parser.add_argument("--output", type=Path, default=Path("results/summary/compression.json"))
-    args = parser.parse_args()
+    parser.add_argument("--config", type=Path)
+    config = load_config("compression", parser.parse_args().config)
 
     rows: list[dict[str, Any]] = []
-    for dataset, model in SETUPS:
-        for ratio in RATIOS:
+    for dataset, model in config["setups"]:
+        for ratio in config["ratios"]:
             finals, uploads = [], []
-            for seed in args.seeds:
-                config = SimulationConfig(
-                    dataset=dataset, model=model, compression=ratio, seed=seed
+            for seed in config["seeds"]:
+                summary = run_simulation(
+                    SimulationConfig(
+                        dataset=dataset,
+                        model=model,
+                        compression=ratio,
+                        seed=seed,
+                        clients=config["clients"],
+                        rounds=config["rounds"],
+                        alpha=config["alpha"],
+                    )
                 )
-                summary = run_simulation(config)
                 finals.append(summary["final_accuracy"])
                 uploads.append(summary["bytes_up"])
             stats = mean_std(finals)
@@ -56,20 +59,7 @@ def main() -> None:
             )
 
     write_summary(
-        args.output,
-        {
-            "description": __doc__.splitlines()[0],
-            "setup": {
-                "strategy": "fedavg",
-                "clients": 10,
-                "rounds": 30,
-                "alpha": 0.5,
-                "seeds": args.seeds,
-                "bytes_per_kept_entry": 8,
-                "bytes_per_dense_entry": 4,
-            },
-            "results": rows,
-        },
+        Path(config["output"]), {"description": __doc__.splitlines()[0], "results": rows}, config
     )
 
 
