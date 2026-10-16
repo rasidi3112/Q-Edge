@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     data_dir: Path = Field(Path("qedge-data"), validation_alias=_env("QEDGE_DATA_DIR"))
     database_url: str | None = Field(None, validation_alias=_env("QEDGE_DATABASE_URL"))
     max_samples: int = Field(1_000_000, ge=1, validation_alias=_env("QEDGE_MAX_SAMPLES"))
+    aggregation: Literal["fedavg", "median", "trimmed_mean", "krum", "multi_krum", "bounded"] = (
+        Field("fedavg", validation_alias=_env("QEDGE_AGGREGATION"))
+    )
     max_update_bytes: int = Field(
         16 * 1024 * 1024, ge=1024, validation_alias=_env("QEDGE_MAX_UPDATE_BYTES")
     )

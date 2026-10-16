@@ -187,3 +187,37 @@ def test_concurrent_submissions_are_never_lost(tmp_path):
     )
     service.shutdown()
     database.dispose()
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "expected"), [("fedavg", [102.2 / 3, -98.2 / 3]), ("median", [1.2, 0.8])]
+)
+def test_server_aggregation_rule_is_configurable(tmp_path, aggregation, expected):
+    database = Database(f"sqlite:///{tmp_path / 'qedge.db'}")
+    database.upgrade()
+    service = RoundService(
+        database, BlobStore(tmp_path / "blobs"), max_samples=100, aggregation=aggregation
+    )
+    spec = ModelSpec((TensorSpec("w", (2,), "float32"),))
+    with database.session() as session:
+        for i in range(3):
+            session.add(Client(id=f"c{i}", public_key=b"k", scope="client", created_at=0.0))
+        session.commit()
+    round_id = service.create(spec, min_clients=3, deadline_seconds=None).round_id
+    for i, values in enumerate([(1.0, 1.0), (1.2, 0.8), (100.0, -100.0)]):
+        service.submit(
+            round_id, f"c{i}", encode_update(UpdateHeader(round_id, 1, 0.0), spec, w(*values))
+        )
+    service.wait(timeout=30)
+
+    model = decode_weights(spec, service.model(round_id))["w"]
+    np.testing.assert_allclose(model, expected, rtol=1e-3)
+    service.shutdown()
+    database.dispose()
+
+
+def test_unknown_server_aggregation_is_rejected(tmp_path):
+    from qedge.fl.robust import server_rule
+
+    with pytest.raises(ValueError, match="norm_clip"):
+        server_rule("norm_clip")

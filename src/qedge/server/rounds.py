@@ -11,7 +11,8 @@ round), so an update either lands before aggregation reads the round or is
 refused with `RoundNotOpenError`.
 
 Clients can still lie about ``n_samples`` within ``max_samples`` and can send
-arbitrary finite weights; robust aggregation is a later phase.
+arbitrary finite weights. ``aggregation`` selects FedAvg or a robust rule
+from `qedge.fl.robust.SERVER_RULES` to limit their influence.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from qedge.fl.strategies import fedavg
+from qedge.fl.robust import server_rule
 from qedge.fl.weights import (
     ModelSpec,
     WeightFormatError,
@@ -102,6 +103,7 @@ class RoundService:
         db: The server database.
         blobs: Storage for encoded weights.
         max_samples: Largest ``n_samples`` a single update may claim.
+        aggregation: One of `qedge.fl.robust.SERVER_RULES`.
         clock: Source of the current Unix time in seconds.
         on_event: Called with ``(name, round_info)`` after each state change
             or accepted update; used for metrics.
@@ -114,6 +116,7 @@ class RoundService:
         blobs: BlobStore,
         *,
         max_samples: int,
+        aggregation: str = "fedavg",
         clock: Callable[[], float] = time.time,
         on_event: Callable[[str, RoundInfo], None] | None = None,
         on_aggregated: Callable[[float], None] | None = None,
@@ -121,6 +124,7 @@ class RoundService:
         self._db = db
         self._blobs = blobs
         self._max_samples = max_samples
+        self._aggregate_updates = server_rule(aggregation)
         self._clock = clock
         self._on_event = on_event or (lambda name, info: None)
         self._on_aggregated = on_aggregated or (lambda seconds: None)
@@ -324,7 +328,7 @@ class RoundService:
             for row in rows:
                 _, arrays = decode_update(spec, self._blobs.get(row.weights_sha256))
                 updates.append((arrays, row.n_samples))
-            payload = encode_weights(spec, fedavg(updates))
+            payload = encode_weights(spec, self._aggregate_updates(updates))
             digest = self._blobs.put(payload)
             # decode_weights round-trips the aggregate as a final format check.
             decode_weights(spec, payload)

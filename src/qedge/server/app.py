@@ -630,6 +630,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             database,
             BlobStore(settings.data_dir / "blobs"),
             max_samples=settings.max_samples,
+            aggregation=settings.aggregation,
             on_event=on_event,
             on_aggregated=metrics.aggregation.observe,
         )
