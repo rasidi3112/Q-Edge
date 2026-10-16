@@ -37,7 +37,7 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 |------------|-------------|--------|
 | **Federated Learning** | Distributed ML without exposing raw data | Simulated |
 | **Quantum ML** | Variational Quantum Circuits (VQC) & Quantum Kernel | PennyLane Simulator |
-| **Post-Quantum Crypto** | ML-KEM, ML-DSA (FIPS 203/204), hybrid X25519 | liboqs; transport not yet used by the API |
+| **Post-Quantum Crypto** | ML-KEM, ML-DSA (FIPS 203/204), hybrid X25519 | liboqs; carries every client update |
 
 ### Why Quantum?
 
@@ -155,27 +155,49 @@ pytest -m "not slow"   # the suite CI runs on every push
 pytest -m slow         # long-running tests, run weekly in CI
 ```
 
-### Docker
+### Running the server
 
 ```bash
-cp .env.example .env   # set JWT_SECRET_KEY and REDIS_PASSWORD
-docker compose run --rm api qedge keys init --dir /keys
-docker compose up --build
-```
-
-Compose starts the API (published on `127.0.0.1:8000`), one Celery worker and
-Redis. The image builds liboqs 0.16.0; the API refuses to start until server
-keys exist.
-
-### Server keys without Docker
-
-```bash
-qedge keys init --dir ./keys --backend pure   # or build liboqs and use --backend liboqs
-QEDGE_CRYPTO_BACKEND=pure QEDGE_KEY_DIR=./keys qedge-api
+pip install -e ".[server,pqc-pure]"
+qedge keys init --dir ./keys --backend pure        # server KEM and ML-DSA keys
+qedge clients keygen --out ./admin --backend pure  # admin key pair, stays local
+qedge clients add --id admin --scope admin --public-key ./admin/client.pub --backend pure
+JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))") \
+  QEDGE_CRYPTO_BACKEND=pure QEDGE_KEY_DIR=./keys qedge-api
 ```
 
 The `pure` backend logs a warning: it is not constant-time and is meant for
-tests. Design decisions are recorded in [`docs/decisions/`](docs/decisions/).
+tests; build liboqs and use `--backend liboqs` otherwise. A round then goes:
+
+1. The admin enrolls each client's public key (`qedge clients add` or
+   `POST /admin/clients`) and opens a round with a model spec
+   (`POST /admin/rounds`).
+2. A client logs in by signing a single-use nonce (`/auth/challenge`,
+   `/auth/token`), opens an encrypted session (`/transport/handshake`) and
+   sends one sealed update (`/rounds/{id}/updates`).
+3. The server aggregates (sample-weighted FedAvg) once `min_clients` updates
+   arrived or the deadline passed, and serves the model at
+   `/rounds/{id}/model`. `/rounds/{id}/events` streams state changes (SSE) and
+   `/metrics` exposes Prometheus counters.
+
+`qedge.fl.remote.RemoteClient` implements the client side. What this protects
+and what it does not is in [`docs/threat-model.md`](docs/threat-model.md).
+
+### Docker
+
+```bash
+cp .env.example .env   # set JWT_SECRET_KEY, REDIS_PASSWORD, POSTGRES_PASSWORD
+qedge clients keygen --out ./admin
+docker compose run --rm api qedge keys init --dir /keys
+docker compose run --rm -v "$PWD/admin:/admin:ro" api \
+  qedge clients add --id admin --scope admin --public-key /admin/client.pub
+docker compose up --build
+```
+
+Compose starts the API (published on `127.0.0.1:8000`), one Celery worker,
+Redis and Postgres. The image builds liboqs 0.16.0; the API refuses to start
+until server keys exist. Design decisions are recorded in
+[`docs/decisions/`](docs/decisions/).
 
 ### Run Flutter App
 
@@ -197,8 +219,10 @@ Q-Edge/
 │   │   ├── kernels.py        # Quantum kernel alignment
 │   │   └── zne.py            # Zero-noise extrapolation, readout mitigation
 │   ├── fl/
-│   │   ├── aggregator.py     # Server-side aggregation
+│   │   ├── aggregator.py     # Old VQC weight-mixing aggregator; unused by the server
 │   │   ├── client.py         # Flower client (needs the `fl` extra)
+│   │   ├── remote.py         # Client for the Q-Edge server API
+│   │   ├── strategies.py     # Aggregation rules (FedAvg)
 │   │   └── weights.py        # Weight wire format
 │   ├── crypto/
 │   │   ├── backends/         # liboqs and pure-Python ML-KEM / ML-DSA
@@ -207,11 +231,16 @@ Q-Edge/
 │   │   └── transport.py      # Signed handshake, ChaCha20-Poly1305 frames
 │   └── server/
 │       ├── app.py            # FastAPI app factory and endpoints
-│       ├── auth.py           # JWT and middleware
-│       ├── settings.py       # Environment settings
-│       └── worker.py         # Celery app and tasks
+│       ├── auth.py           # Enrollment, challenge-response login, tokens
+│       ├── channels.py       # Encrypted session store
+│       ├── db.py             # SQLAlchemy models, Alembic migrations, blobs
+│       ├── metrics.py        # Prometheus metrics
+│       ├── rounds.py         # Round state machine and aggregation
+│       ├── settings.py       # Environment settings (pydantic-settings)
+│       └── worker.py         # Celery task for bounded circuit runs
 ├── tests/                    # Unit and integration tests
 ├── bench/crypto.py           # Crypto benchmark -> results/summary/crypto.json
+├── docs/threat-model.md       # Assets, adversaries, what is not protected
 ├── docs/decisions/           # Architecture decision records
 ├── mobile_app/               # Flutter UI
 ├── demo.py                   # Demo script
@@ -261,8 +290,7 @@ There is no simulated fallback: a missing backend or missing key file stops the
 server ([ADR 0004](docs/decisions/0004-explicit-crypto-backend.md)). Key and
 ciphertext sizes, timings per backend and the handshake cost are in
 [`results/summary/crypto.json`](results/summary/crypto.json), produced by
-`python bench/crypto.py`. The API endpoints still accept JSON weights; moving
-submissions onto the encrypted channel is part of the backend rework.
+`python bench/crypto.py`. Client updates reach the server only inside this channel.
 
 ---
 

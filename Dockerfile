@@ -30,15 +30,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OQS_INSTALL_PATH=/opt/liboqs
 COPY --from=liboqs /opt/liboqs /opt/liboqs
 COPY --from=build /wheels /wheels
-RUN pip install "$(ls /wheels/q_edge-*.whl)[server,pqc]" && rm -rf /wheels \
+RUN pip install "$(ls /wheels/q_edge-*.whl)[server,pqc,postgres]" && rm -rf /wheels \
     && useradd --create-home --uid 10001 qedge \
-    && mkdir /keys && chown qedge /keys && chmod 700 /keys
+    && mkdir /keys /data && chown qedge /keys /data && chmod 700 /keys /data
 USER qedge
 WORKDIR /home/qedge
 
 FROM base AS api
 ENV QEDGE_CRYPTO_BACKEND=liboqs \
-    QEDGE_KEY_DIR=/keys
+    QEDGE_KEY_DIR=/keys \
+    QEDGE_DATA_DIR=/data
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]

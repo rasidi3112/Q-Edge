@@ -1,7 +1,10 @@
-# Local stack: API, Celery worker, and Redis as broker and result backend.
-# JWT_SECRET_KEY and REDIS_PASSWORD must be set (see .env.example). The API
-# refuses to start until server keys exist in the server_keys volume:
+# Local stack: API, Celery worker, Redis (broker and results) and Postgres.
+# JWT_SECRET_KEY, REDIS_PASSWORD and POSTGRES_PASSWORD must be set (see
+# .env.example). Before the first start, create server keys and enroll an
+# admin whose key pair stays on your machine (qedge clients keygen --out ./admin):
 #   docker compose run --rm api qedge keys init --dir /keys
+#   docker compose run --rm -v "$PWD/admin:/admin:ro" api \
+#       qedge clients add --id admin --scope admin --public-key /admin/client.pub
 #   docker compose up --build
 
 x-celery-env: &celery-env
@@ -16,11 +19,15 @@ services:
     environment:
       <<: *celery-env
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
+      QEDGE_DATABASE_URL: postgresql+psycopg://qedge:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/qedge
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
       - server_keys:/keys
+      - server_data:/data
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -33,6 +40,20 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: qedge
+      POSTGRES_DB: qedge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qedge -d qedge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7.4-alpine
@@ -48,5 +69,7 @@ services:
       - redis_data:/data
 
 volumes:
+  postgres_data:
   redis_data:
+  server_data:
   server_keys:
