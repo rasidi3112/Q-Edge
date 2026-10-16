@@ -16,17 +16,17 @@ jobs:
   secret-scan:
     name: Secret Detection
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: TruffleHog Secret Scan
         uses: trufflesecurity/trufflehog@main
         with:
           extra_args: --only-verified
-      
+
       - name: GitLeaks Scan
         uses: gitleaks/gitleaks-action@v2
         env:
@@ -35,27 +35,27 @@ jobs:
   dependency-audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      
+
       - name: Install pip-audit
         run: pip install pip-audit
-      
+
       - name: Run pip-audit
         run: pip-audit --strict
         continue-on-error: true
-      
+
       - name: Install dependencies and check
         run: |
           pip install -e .
           pip-audit --format=json > pip-audit-results.json || true
-      
+
       - name: Upload Audit Results
         uses: actions/upload-artifact@v4
         with:
@@ -65,19 +65,19 @@ jobs:
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: python
           queries: security-and-quality
-      
+
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
-      
+
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
@@ -86,21 +86,21 @@ jobs:
   bandit:
     name: Bandit Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      
+
       - name: Install Bandit
         run: pip install bandit[toml]
-      
+
       - name: Run Bandit
         run: bandit -r src/ -f sarif -o bandit-results.sarif || true
-      
+
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -111,13 +111,13 @@ jobs:
     name: Container Security
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Build Docker image
         run: docker build -t qedge-api:scan -f deploy/docker/Dockerfile.api .
-      
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -125,7 +125,7 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-      
+
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:

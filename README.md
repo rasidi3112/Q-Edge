@@ -1,4 +1,4 @@
-<div align="center"> 
+<div align="center">
 
 # Q-Edge
 
@@ -197,10 +197,10 @@ def vqc(params, data):
     # Data encoding
     for i, x in enumerate(data):
         qml.RY(x, wires=i)
-    
+
     # Parameterized layers
     qml.StronglyEntanglingLayers(params, wires=range(n_qubits))
-    
+
     return qml.probs(wires=range(n_qubits))
 ```
 
