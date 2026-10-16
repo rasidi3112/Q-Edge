@@ -38,7 +38,6 @@ Q-Edge is an **experimental platform** that explores the intersection of three c
 | **Federated Learning** | Distributed ML without exposing raw data | Simulated |
 | **Quantum ML** | Variational Quantum Circuits (VQC) & Quantum Kernel | PennyLane Simulator |
 | **Post-Quantum Crypto** | Kyber & Dilithium (NIST standards) | Placeholder |
-| **Azure Quantum** | Cloud quantum hardware integration | Code Ready |
 
 ### Why Quantum?
 
@@ -154,8 +153,7 @@ q-edge/
 │   │   ├── circuits.py       # Variational Quantum Circuits
 │   │   ├── kernels.py        # Quantum Kernel Alignment
 │   │   ├── error_mitigation.py # Zero-Noise Extrapolation
-│   │   ├── aggregator.py     # Quantum-Enhanced Aggregation
-│   │   └── azure_connector.py # Azure Quantum Integration
+│   │   └── aggregator.py     # Quantum-Enhanced Aggregation
 │   │
 │   ├── backend/              # FastAPI Backend
 │   │   ├── main.py           # API endpoints
@@ -249,7 +247,6 @@ def vqc(params, data):
 | **Backend** | FastAPI, Celery, Redis |
 | **Mobile** | Flutter, Dart |
 | **Security** | cryptography, python-jose |
-| **Cloud** | Azure Quantum (ready) |
 | **DevOps** | Docker, GitHub Actions |
 
 </div>
@@ -265,7 +262,6 @@ def vqc(params, data):
 - [x] Flutter Mobile App
 - [x] FastAPI Backend
 - [ ] Real PQC with liboqs
-- [ ] Azure Quantum Integration
 - [ ] Real Dataset Training
 - [ ] Mobile Device Testing
 

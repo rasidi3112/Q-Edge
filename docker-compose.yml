@@ -22,7 +22,6 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
-      - AZURE_KEY_VAULT_URL=${AZURE_KEY_VAULT_URL}
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - POSTGRES_HOST=postgres
@@ -55,9 +54,6 @@ services:
       dockerfile: deploy/docker/Dockerfile.quantum
     container_name: qedge-quantum-worker
     environment:
-      - AZURE_QUANTUM_SUBSCRIPTION_ID=${AZURE_QUANTUM_SUBSCRIPTION_ID}
-      - AZURE_QUANTUM_RESOURCE_GROUP=${AZURE_QUANTUM_RESOURCE_GROUP}
-      - AZURE_QUANTUM_WORKSPACE_NAME=${AZURE_QUANTUM_WORKSPACE_NAME}
       - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:

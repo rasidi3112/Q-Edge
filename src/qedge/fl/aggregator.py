@@ -12,12 +12,6 @@ from numpy.typing import NDArray
 from qedge.quantum.circuits import VQCConfig, VariationalQuantumCircuit
 from qedge.quantum.kernels import QKAConfig, QuantumKernelAlignment
 from qedge.quantum.zne import ZNEConfig, ZeroNoiseExtrapolation
-from qedge.quantum.azure_connector import (
-    AzureQuantumConfig,
-    AzureQuantumConnector,
-    QuantumProvider,
-    QuantumTarget,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +59,6 @@ class QuantumAggregatorConfig:
     zne_scale_factors: Sequence[float] = field(
         default_factory=lambda: [1.0, 1.5, 2.0, 2.5]
     )
-    use_azure_quantum: bool = False
-    azure_config: Optional[AzureQuantumConfig] = None
     weight_compression_ratio: float = 0.1  # Encode 10% of weights quantumly
     quantum_learning_rate: float = 0.01
     classical_weight: float = 0.7  # 70% classical, 30% quantum
@@ -108,12 +100,6 @@ class QuantumGlobalAggregator:
         else:
             self.zne = None
         
-        # Initialize Azure Quantum connector
-        if config.use_azure_quantum and config.azure_config is not None:
-            self.azure_connector = AzureQuantumConnector(config.azure_config)
-        else:
-            self.azure_connector = None
-        
         # State tracking
         self.global_state: Optional[GlobalModelState] = None
         self.round_history: List[GlobalModelState] = []
@@ -124,17 +110,6 @@ class QuantumGlobalAggregator:
             f"qubits={config.n_qubits}, vqc_layers={config.vqc_layers}, "
             f"strategy={config.aggregation_strategy.value}"
         )
-    
-    async def connect_azure(self) -> bool:
-        
-        if self.azure_connector is not None:
-            try:
-                await self.azure_connector.connect()
-                return True
-            except Exception as e:
-                logger.error(f"Failed to connect to Azure Quantum: {e}")
-                return False
-        return True
     
     def _classical_aggregate(
         self,
@@ -284,35 +259,6 @@ class QuantumGlobalAggregator:
         
         return quantum_encoding
     
-    async def _quantum_transform_azure(
-        self,
-        weights: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        
-        if self.azure_connector is None or not self.azure_connector.is_connected:
-            # Fall back to local simulation
-            return self._quantum_transform(weights)
-        
-        # Compress weights
-        compressed = self._compress_weights(weights)
-        
-        # Submit to Azure Quantum
-        result = await self.azure_connector.submit_pennylane_circuit(
-            circuit_fn=lambda p: self.vqc._circuit(self.vqc.params, p),
-            params=compressed,
-            n_qubits=self.config.n_qubits,
-            shots=1024,
-        )
-        
-        if result.probabilities is not None:
-            # Use probabilities as quantum features
-            quantum_features = np.log(result.probabilities + 1e-10)
-            quantum_features = quantum_features / np.max(np.abs(quantum_features))
-            return quantum_features[:self.config.n_qubits]
-        
-        # Fall back to simulation if Azure fails
-        return self._quantum_transform(weights)
-    
     def _compute_kernel_distance(
         self,
         weights_list: List[NDArray[np.float64]],
@@ -394,10 +340,7 @@ class QuantumGlobalAggregator:
         metrics["kernel_determinant"] = float(np.linalg.det(kernel_matrix + 1e-6 * np.eye(len(updates))))
         
         # Step 3: Apply quantum transformation
-        if self.config.use_azure_quantum and self.azure_connector is not None:
-            quantum_encoding = await self._quantum_transform_azure(classical_weights)
-        else:
-            quantum_encoding = self._quantum_transform(classical_weights)
+        quantum_encoding = self._quantum_transform(classical_weights)
         
         # Step 4: Expand quantum encoding to weight space
         quantum_weights = self._expand_weights(quantum_encoding, original_shape)

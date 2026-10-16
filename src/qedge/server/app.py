@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field
 
 from qedge.server.auth import (
     PQCAuthMiddleware,
-    AzureKeyVaultManager,
     verify_jwt_token,
     create_jwt_token,
 )
@@ -87,7 +86,6 @@ class QuantumJobSubmission(BaseModel):
     
     circuit_type: str = Field(..., description="Type of quantum circuit")
     parameters: Dict[str, Any] = Field(default_factory=dict)
-    target_hardware: str = Field(default="simulator")
     shots: int = Field(default=1024, ge=1, le=10000)
 
 class QuantumJobStatus(BaseModel):
@@ -109,25 +107,15 @@ class HealthCheckResponse(BaseModel):
 
 # Global state
 quantum_aggregator: Optional[QuantumGlobalAggregator] = None
-key_vault_manager: Optional[AzureKeyVaultManager] = None
 registered_clients: Dict[str, Dict[str, Any]] = {}
 current_round_updates: List[LocalModelUpdate] = []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     
-    global quantum_aggregator, key_vault_manager
+    global quantum_aggregator
     
     logger.info("Starting Q-Edge Backend...")
-    
-    # Initialize Azure Key Vault manager
-    try:
-        key_vault_manager = AzureKeyVaultManager()
-        await key_vault_manager.connect()
-        logger.info("Connected to Azure Key Vault")
-    except Exception as e:
-        logger.warning(f"Azure Key Vault not available: {e}")
-        key_vault_manager = None
     
     # Initialize Quantum Aggregator
     config = QuantumAggregatorConfig(
@@ -141,9 +129,6 @@ async def lifespan(app: FastAPI):
     yield
     
     logger.info("Shutting down Q-Edge Backend...")
-    
-    if key_vault_manager:
-        await key_vault_manager.disconnect()
 
 # Create FastAPI application
 app = FastAPI(
@@ -214,7 +199,6 @@ async def health_check() -> HealthCheckResponse:
     services = {
         "api": "healthy",
         "quantum_aggregator": "healthy" if quantum_aggregator else "unavailable",
-        "key_vault": "healthy" if key_vault_manager and key_vault_manager.is_connected else "unavailable",
         "celery": "healthy",  # Would check celery.control.ping() in production
     }
     
@@ -444,16 +428,12 @@ async def submit_quantum_job(
     client: Dict[str, Any] = Depends(get_current_client),
 ) -> QuantumJobStatus:
     
-    logger.info(
-        f"Submitting quantum job: {job.circuit_type} "
-        f"on {job.target_hardware}"
-    )
+    logger.info(f"Submitting quantum job: {job.circuit_type}")
     
     # Submit to Celery
     task = submit_quantum_aggregation.delay(
         circuit_type=job.circuit_type,
         parameters=job.parameters,
-        target=job.target_hardware,
         shots=job.shots,
     )
     

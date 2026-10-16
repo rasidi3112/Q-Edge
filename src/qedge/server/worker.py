@@ -72,10 +72,6 @@ celery_app.conf.update(
             "task": "qedge.server.worker.cleanup_expired_jobs",
             "schedule": 3600.0,  # Every hour
         },
-        "sync-quantum-hardware-status": {
-            "task": "qedge.server.worker.sync_hardware_status",
-            "schedule": 300.0,  # Every 5 minutes
-        },
     },
 )
 
@@ -108,13 +104,12 @@ def submit_quantum_aggregation(
     self,
     circuit_type: str,
     parameters: Dict[str, Any],
-    target: str = "simulator",
     shots: int = 1024,
 ) -> Dict[str, Any]:
     
     logger.info(
         f"Starting quantum aggregation: circuit={circuit_type}, "
-        f"target={target}, shots={shots}"
+        f"shots={shots}"
     )
     
     start_time = time.time()
@@ -131,7 +126,6 @@ def submit_quantum_aggregation(
         config = QuantumAggregatorConfig(
             n_qubits=parameters.get("n_qubits", 8),
             vqc_layers=parameters.get("vqc_layers", 4),
-            use_azure_quantum=target != "simulator",
         )
         aggregator = QuantumGlobalAggregator(config)
         
@@ -182,7 +176,6 @@ def submit_quantum_aggregation(
             ),
             "metrics": result.aggregation_metrics,
             "execution_time_seconds": execution_time,
-            "target": target,
             "shots": shots,
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -204,11 +197,10 @@ def submit_quantum_aggregation(
 def execute_quantum_circuit(
     self,
     circuit_definition: Dict[str, Any],
-    target: str = "simulator",
     shots: int = 1024,
 ) -> Dict[str, Any]:
     
-    logger.info(f"Executing quantum circuit on {target}")
+    logger.info("Executing quantum circuit on the local simulator")
     
     start_time = time.time()
     
@@ -255,7 +247,6 @@ def execute_quantum_circuit(
             "circuit_depth": vqc.get_circuit_depth(),
             "gate_counts": vqc.get_gate_count(),
             "execution_time_seconds": execution_time,
-            "target": target,
             "shots": shots,
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -319,27 +310,6 @@ def cleanup_expired_jobs() -> Dict[str, Any]:
     return {
         "status": "completed",
         "cleaned_jobs": 0,
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-
-@celery_app.task(name="sync_hardware_status")
-def sync_hardware_status() -> Dict[str, Any]:
-    
-    logger.info("Syncing quantum hardware status...")
-    
-    # Would query Azure Quantum for hardware status
-    hardware_status = {
-        "ionq.simulator": "available",
-        "ionq.qpu": "available",
-        "rigetti.sim.qvm": "available",
-        "rigetti.qpu.aspen-m-3": "maintenance",
-        "quantinuum.sim.h1-1sc": "available",
-        "quantinuum.qpu.h1-1": "available",
-    }
-    
-    return {
-        "status": "completed",
-        "hardware": hardware_status,
         "timestamp": datetime.utcnow().isoformat(),
     }
 

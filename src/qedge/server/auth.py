@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -256,137 +256,6 @@ class PQCProvider:
             PQCAlgorithm.DILITHIUM_5: "Dilithium5",
         }
         return mapping.get(algorithm, "Kyber1024")
-
-class AzureKeyVaultManager:
-    
-    
-    def __init__(
-        self,
-        vault_url: Optional[str] = None,
-    ) -> None:
-        
-        self.vault_url = vault_url or os.getenv("AZURE_KEY_VAULT_URL")
-        self._client = None
-        self._credential = None
-        self.is_connected = False
-        
-        # Cache for secrets (with TTL)
-        self._cache: Dict[str, Tuple[str, float]] = {}
-        self._cache_ttl = 300  # 5 minutes
-    
-    async def connect(self) -> None:
-        
-        if not self.vault_url:
-            logger.warning("AZURE_KEY_VAULT_URL not set, Key Vault disabled")
-            return
-        
-        try:
-            from azure.identity import DefaultAzureCredential
-            from azure.keyvault.secrets import SecretClient
-            
-            self._credential = DefaultAzureCredential()
-            self._client = SecretClient(
-                vault_url=self.vault_url,
-                credential=self._credential,
-            )
-            
-            # Test connection by listing secrets (limited)
-            # This will fail fast if credentials are invalid
-            list(self._client.list_properties_of_secrets(max_page_size=1))
-            
-            self.is_connected = True
-            logger.info(f"Connected to Azure Key Vault: {self.vault_url}")
-            
-        except ImportError:
-            logger.warning(
-                "Azure SDK not installed. Install azure-identity and "
-                "azure-keyvault-secrets for Key Vault support."
-            )
-        except Exception as e:
-            logger.error(f"Failed to connect to Key Vault: {e}")
-            raise ConnectionError(f"Key Vault connection failed: {e}")
-    
-    async def disconnect(self) -> None:
-        
-        self._client = None
-        self._credential = None
-        self.is_connected = False
-        self._cache.clear()
-        logger.info("Disconnected from Azure Key Vault")
-    
-    async def get_secret(
-        self,
-        secret_name: str,
-        use_cache: bool = True,
-    ) -> Optional[str]:
-        
-        # Check cache first
-        if use_cache and secret_name in self._cache:
-            value, timestamp = self._cache[secret_name]
-            if time.time() - timestamp < self._cache_ttl:
-                return value
-        
-        if not self.is_connected or self._client is None:
-            # Fall back to environment variable
-            env_name = secret_name.upper().replace("-", "_")
-            return os.getenv(env_name)
-        
-        try:
-            secret = self._client.get_secret(secret_name)
-            value = secret.value
-            
-            # Cache the value
-            self._cache[secret_name] = (value, time.time())
-            
-            return value
-            
-        except Exception as e:
-            logger.warning(f"Failed to retrieve secret {secret_name}: {e}")
-            # Fall back to environment variable
-            env_name = secret_name.upper().replace("-", "_")
-            return os.getenv(env_name)
-    
-    async def set_secret(self, secret_name: str, value: str) -> bool:
-        
-        if not self.is_connected or self._client is None:
-            logger.warning("Key Vault not connected, cannot store secret")
-            return False
-        
-        try:
-            self._client.set_secret(secret_name, value)
-            
-            # Update cache
-            self._cache[secret_name] = (value, time.time())
-            
-            logger.info(f"Stored secret: {secret_name}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to store secret {secret_name}: {e}")
-            return False
-    
-    async def get_quantum_credentials(self) -> Dict[str, str]:
-        
-        credentials = {}
-        
-        quantum_secrets = [
-            "azure-quantum-subscription-id",
-            "azure-quantum-resource-group",
-            "azure-quantum-workspace",
-            "ionq-api-key",
-        ]
-        
-        for secret_name in quantum_secrets:
-            value = await self.get_secret(secret_name)
-            if value:
-                key = secret_name.replace("-", "_").upper()
-                credentials[key] = value
-        
-        return credentials
-    
-    async def get_openai_key(self) -> Optional[str]:
-        
-        return await self.get_secret("azure-openai-key")
 
 # JWT Token Management
 def create_jwt_token(

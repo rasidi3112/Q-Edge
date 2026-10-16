@@ -157,7 +157,6 @@ class TestQuantumEndpoints:
         job_data = {
             "circuit_type": "vqc",
             "parameters": {"n_qubits": 4},
-            "target_hardware": "simulator",
             "shots": 1024,
         }
         
@@ -179,7 +178,6 @@ class TestQuantumEndpoints:
         job_data = {
             "circuit_type": "vqc",
             "parameters": {"n_qubits": 4},
-            "target_hardware": "simulator",
             "shots": 1024,
         }
         
