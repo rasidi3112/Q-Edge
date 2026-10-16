@@ -52,11 +52,12 @@ split, noise and mitigation, and reports the result either way.
 │                        Q-EDGE ARCHITECTURE                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│   Mobile Clients            Backend              Quantum        │
+│   FL clients                Backend              Quantum        │
 │   ┌─────────────┐          ┌─────────────┐      ┌───────────┐   │
-│   │ Flutter App │ ──PQC──▶ │  FastAPI    │ ───▶ │ PennyLane │   │
-│   │ FL Client   │          │  + Celery   │      │ Circuits  │   │
-│   └─────────────┘          └─────────────┘      └───────────┘   │
+│   │ Python      │ ──PQC──▶ │  FastAPI    │ ───▶ │ PennyLane │   │
+│   │ RemoteClient│          │  + Celery   │      │ Circuits  │   │
+│   └─────────────┘          └─────▲───────┘      └───────────┘   │
+│   Flutter dashboard ── REST/SSE ─┘ (read-only, no crypto)       │
 │                                                                 │
 │   Security: X25519 + ML-KEM-768, ML-DSA-65 (liboqs)             │
 │   Aggregation: FedAvg, FedProx, FedAdam, FedYogi                │
@@ -370,13 +371,17 @@ Redis and Postgres. The image builds liboqs 0.16.0; the API refuses to start
 until server keys exist. Design decisions are recorded in
 [`docs/decisions/`](docs/decisions/).
 
-### Run Flutter App
+### Flutter dashboard
 
 ```bash
 cd mobile_app
 flutter pub get
-flutter run -d chrome  # or your preferred device
+flutter run -d chrome --web-port 3000 --dart-define=QEDGE_API_URL=http://localhost:8000
 ```
+
+A read-only view of server health, key fingerprints and rounds (live via
+server-sent events). It performs no cryptography and no training; see
+[`mobile_app/README.md`](mobile_app/README.md).
 
 ---
 
@@ -426,7 +431,7 @@ Q-Edge/
 ├── results/summary/          # Committed JSON summaries (results/runs/ is ignored)
 ├── docs/threat-model.md       # Assets, adversaries, what is not protected
 ├── docs/decisions/           # Architecture decision records
-├── mobile_app/               # Flutter UI
+├── mobile_app/               # Flutter dashboard (read-only, REST and SSE)
 ├── demo.py                   # Demo script
 ├── Dockerfile                # Targets: api, worker
 └── docker-compose.yml        # API, worker, Redis

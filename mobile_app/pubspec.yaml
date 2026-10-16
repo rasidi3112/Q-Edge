@@ -1,5 +1,5 @@
 name: q_edge_mobile
-description: Q-Edge - Federated Hybrid Quantum-Neural Network Mobile Application
+description: Read-only dashboard for a Q-Edge server.
 
 publish_to: 'none'
 
@@ -11,7 +11,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
