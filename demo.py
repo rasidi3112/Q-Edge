@@ -59,143 +59,79 @@ def print_status(message, status="info"):
 
 
 def demo_quantum_circuits():
-    print_section("🔮 Demo 1: Variational Quantum Circuits (VQC)")
+    print_section("Demo 1: Variational quantum circuit (simulated)")
 
-    from qedge.quantum.circuits import EntanglementPattern, VariationalQuantumCircuit, VQCConfig
+    import pennylane as qml
 
-    print_status("Creating VQC with 8 qubits, 4 layers...", "quantum")
+    from qedge.quantum.circuits import vqc, weight_shape
+    from qedge.quantum.noise import NoiseConfig, make_device
 
-    config = VQCConfig(
-        n_qubits=8,
-        n_layers=4,
-        entanglement=EntanglementPattern.FULL,
-        data_reuploading=True,
-    )
+    shape = weight_shape("strongly_entangling", 2, 4)
+    weights = np.random.default_rng(42).uniform(0, 2 * np.pi, shape)
+    features = np.random.default_rng(0).uniform(-np.pi, np.pi, 4)
+    print_status(f"4 qubits, 2 StronglyEntanglingLayers, {np.prod(shape)} weights", "info")
 
-    vqc = VariationalQuantumCircuit(config, seed=42)
-
-    print_status(f"VQC initialized with {vqc.num_params} trainable parameters", "success")
-    print_status(f"Circuit depth: {vqc.get_circuit_depth()}", "info")
-    print_status(f"Gate counts: {vqc.get_gate_count()}", "info")
-
-    print_status("\nExecuting forward pass with random features...", "quantum")
-    features = np.random.randn(8)
-
-    start_time = time.time()
-    output = vqc.forward(features)
-    exec_time = (time.time() - start_time) * 1000
-
-    print_status(f"Execution time: {exec_time:.2f}ms", "success")
-    print_status("Output probabilities (first 8):", "info")
-
-    for i in range(min(8, len(output))):
-        bitstring = format(i, "08b")
-        bar_len = int(output[i] * 50)
-        bar = "█" * bar_len + "░" * (50 - bar_len)
-        print(f"    |{bitstring}⟩: {output[i]:.6f} [{bar}]")
-
-    print_status(f"\n✓ Total probability: {np.sum(output):.6f}", "success")
-
-    return vqc
+    for label, noise in (
+        ("noiseless", NoiseConfig()),
+        ("depolarizing p=0.01", NoiseConfig(p=0.01)),
+    ):
+        qnode = qml.QNode(
+            lambda x, w: vqc(x, w, ansatz="strongly_entangling", reupload=False),
+            make_device(4, noise),
+        )
+        start_time = time.perf_counter()
+        values = np.asarray(qnode(features, weights))
+        exec_ms = (time.perf_counter() - start_time) * 1000
+        print(f"    {label:22} <Z_i> = {np.round(values, 4)}  ({exec_ms:.1f} ms)")
 
 
 def demo_quantum_kernels():
-    print_section("🎯 Demo 2: Quantum Kernel Alignment (QKA)")
+    print_section("Demo 2: Fidelity quantum kernel")
 
-    from qedge.quantum.kernels import FeatureMapType, QKAConfig, QuantumKernelAlignment
+    from qedge.fl.partition import load_dataset
+    from qedge.quantum.kernels import QuantumKernel
 
-    print_status("Initializing QKA with ZZ feature map...", "quantum")
-
-    config = QKAConfig(
-        n_qubits=4,
-        n_layers=2,
-        feature_map_type=FeatureMapType.ZZ_FEATURE_MAP,
-    )
-
-    qka = QuantumKernelAlignment(config, seed=42)
-
-    print_status("Creating synthetic dataset (2 classes)...", "info")
-    np.random.seed(42)
-
-    X0 = np.random.randn(10, 4) - 1
-    X1 = np.random.randn(10, 4) + 1
-
-    X = np.vstack([X0, X1])
-
-    print_status("Computing quantum kernel matrix...", "quantum")
-
-    start_time = time.time()
-    K = qka.compute_kernel_matrix(X)
-    exec_time = (time.time() - start_time) * 1000
-
-    print_status(f"Kernel matrix shape: {K.shape}", "success")
-    print_status(f"Execution time: {exec_time:.2f}ms", "info")
-
-    print_status("\nKernel matrix heatmap (20x20):", "info")
-    print("      ", end="")
-    for j in range(20):
-        print(f"{j:3d}", end="")
-    print()
-
-    for i in range(20):
-        label = "C0" if i < 10 else "C1"
-        print(f"  {label}[{i:2d}] ", end="")
-        for j in range(20):
-            val = K[i, j]
-            if val > 0.8:
-                char = f"{Colors.GREEN}███{Colors.ENDC}"
-            elif val > 0.5:
-                char = f"{Colors.CYAN}▓▓▓{Colors.ENDC}"
-            elif val > 0.2:
-                char = f"{Colors.YELLOW}▒▒▒{Colors.ENDC}"
-            else:
-                char = f"{Colors.RED}░░░{Colors.ENDC}"
-            print(char, end="")
-        print()
-
-    print_status("\n✓ Higher values (green) indicate similar samples", "info")
-    print_status("✓ Block structure shows class separation", "success")
-
-    return qka
+    try:
+        data = load_dataset("breast_cancer", seed=0)
+    except ImportError as error:
+        print_status(f"Skipped: {error}", "warning")
+        return
+    x, y = data.x_train[:20, :4], data.y_train[:20]
+    kernel = QuantumKernel(4)
+    matrix = kernel.matrix(x)
+    same = matrix[np.equal.outer(y, y) & ~np.eye(len(y), dtype=bool)].mean()
+    other = matrix[~np.equal.outer(y, y)].mean()
+    print_status("Angle feature map on the first 4 features of 20 breast_cancer samples", "info")
+    print(f"    k(x, x) min: {np.diag(matrix).min():.10f}")
+    print(f"    smallest eigenvalue: {np.linalg.eigvalsh(matrix).min():.2e}")
+    print(f"    mean k within a class: {same:.3f}, between classes: {other:.3f}")
 
 
 def demo_error_mitigation():
-    print_section("🛡️ Demo 3: Zero-Noise Extrapolation (ZNE)")
+    print_section("Demo 3: Zero-noise extrapolation on a noisy simulator")
 
-    from qedge.quantum.zne import ExtrapolationMethod, ZeroNoiseExtrapolation, ZNEConfig
+    import pennylane as qml
 
-    print_status("Simulating NISQ noise and extrapolation...", "quantum")
+    from qedge.quantum.noise import NoiseConfig, make_device
+    from qedge.quantum.zne import ZNEConfig, estimate
 
-    config = ZNEConfig(
-        scale_factors=[1.0, 1.5, 2.0, 2.5, 3.0],
-        extrapolation_method=ExtrapolationMethod.RICHARDSON,
-    )
+    def circuit(theta):
+        qml.RX(theta, wires=0)
+        qml.CNOT(wires=[0, 1])
+        qml.RY(0.3, wires=1)
+        qml.CNOT(wires=[0, 1])
+        return qml.expval(qml.PauliZ(0) @ qml.PauliZ(1))
 
-    zne = ZeroNoiseExtrapolation(config)
-
-    ideal_value = 0.85
-    print_status(f"Ideal (noise-free) expectation value: {ideal_value}", "info")
-
-    scales = np.array(config.scale_factors)
-    noisy_values = ideal_value * np.exp(-0.15 * (scales - 1)) + np.random.randn(len(scales)) * 0.01
-
-    print_status("\nNoisy measurements at different scales:", "info")
-    for s, v in zip(scales, noisy_values, strict=True):
-        print(f"    λ = {s:.1f}: ⟨O⟩ = {v:.4f}")
-
-    print_status("\nApplying Richardson extrapolation...", "quantum")
-    result = zne.extrapolate(scales, noisy_values)
-
-    print_status(f"\nMitigated value: {result['mitigated_value']:.4f}", "success")
-    print_status(f"Method used: {result['method_used']}", "info")
-    print_status(f"Confidence: {result['confidence']:.2%}", "info")
-
-    unmitigated = noisy_values[-1]
-    improvement = abs(ideal_value - result["mitigated_value"]) / abs(ideal_value - unmitigated)
-
-    print_status(f"\n📊 Error reduction: {(1 - improvement) * 100:.1f}%", "success")
-
-    return zne
+    ideal = float(qml.QNode(circuit, make_device(2, NoiseConfig()))(0.4))
+    noisy = qml.QNode(circuit, make_device(2, NoiseConfig(p=0.01)))
+    print(f"    ideal <ZZ>: {ideal:.4f}")
+    for method, scales in (("richardson", (1.0, 3.0, 5.0)), ("exponential", (1.0, 3.0, 5.0))):
+        result = estimate(noisy, (0.4,), ZNEConfig(method=method, scale_factors=scales))
+        print(
+            f"    {method:12} unmitigated {result.unmitigated:.4f} "
+            f"(error {abs(result.unmitigated - ideal):.4f}), mitigated {result.mitigated:.4f} "
+            f"(error {abs(result.mitigated - ideal):.4f}), factors {result.achieved}"
+        )
 
 
 def demo_federated_learning():
@@ -283,17 +219,14 @@ def print_summary():
 │                     Q-Edge Demo Complete!                           │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  ✅ Demo 1: Variational Quantum Circuits (VQC)                      │
-│     - 8 qubits, 4 layers, 96 parameters                             │
-│     - StronglyEntangling ansatz                                     │
+│  ✅ Demo 1: Variational quantum circuit                             │
+│     - 4 qubits, 2 layers, with and without depolarizing noise       │
 │                                                                      │
-│  ✅ Demo 2: Quantum Kernel Alignment (QKA)                          │
-│     - ZZ feature map                                                │
-│     - Class separation visible in kernel matrix                     │
+│  ✅ Demo 2: Fidelity quantum kernel                                 │
+│     - k(x, x) = 1 and positive semidefinite Gram matrix             │
 │                                                                      │
-│  ✅ Demo 3: Zero-Noise Extrapolation (ZNE)                          │
-│     - Richardson extrapolation                                      │
-│     - Error mitigation for NISQ devices                             │
+│  ✅ Demo 3: Zero-noise extrapolation                                │
+│     - Global folding on a noisy default.mixed simulator             │
 │                                                                      │
 │  ✅ Demo 4: Federated learning                                      │
 │     - 5 simulated clients, non-IID breast_cancer split              │

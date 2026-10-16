@@ -13,10 +13,11 @@ import os
 from typing import Any
 
 import numpy as np
+import pennylane as qml
 from celery import Celery
 from celery.result import AsyncResult
 
-from qedge.quantum.circuits import VariationalQuantumCircuit, VQCConfig
+from qedge.quantum.circuits import probabilities_circuit, weight_shape
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +56,14 @@ def run_circuit(
     shots: int | None = None,
     seed: int | None = None,
 ) -> dict[str, Any]:
-    """Evaluate a strongly entangling VQC on ``default.qubit``.
+    """Evaluate `qml.StronglyEntanglingLayers` after angle embedding on ``default.qubit``.
 
     Args:
         n_qubits: 2 to 12 qubits.
         n_layers: 1 to 6 variational layers.
-        features: At most ``n_qubits`` RY angles in radians.
+        features: At most ``n_qubits`` RY angles in radians; missing angles are 0.
         shots: None for exact probabilities, else 1 to 10 000 shots.
-        seed: Seed for the circuit parameters.
+        seed: Seed for the weights, drawn uniformly from [0, 2 pi), and the shots.
 
     Returns:
         Basis-state probabilities (length ``2**n_qubits``) and the
@@ -77,10 +78,16 @@ def run_circuit(
         raise ValueError("More features than qubits")
     if shots is not None and not 1 <= shots <= MAX_SHOTS:
         raise ValueError(f"shots must be between 1 and {MAX_SHOTS}")
-    vqc = VariationalQuantumCircuit(
-        VQCConfig(n_qubits=n_qubits, n_layers=n_layers), shots=shots, seed=seed
+    rng = np.random.default_rng(seed)
+    weights = rng.uniform(0, 2 * np.pi, weight_shape("strongly_entangling", n_layers, n_qubits))
+    inputs = np.zeros(n_qubits)
+    inputs[: len(features)] = features
+    device = qml.device("default.qubit", wires=n_qubits, seed=seed)
+    qnode = qml.set_shots(
+        qml.QNode(lambda x, w: probabilities_circuit(x, w, ansatz="strongly_entangling"), device),
+        shots=shots,
     )
-    probabilities = vqc.forward(np.asarray(features, dtype=np.float64))
+    probabilities = qnode(inputs, weights)
     return {
         "n_qubits": n_qubits,
         "n_layers": n_layers,

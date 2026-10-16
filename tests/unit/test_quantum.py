@@ -1,286 +1,191 @@
 import numpy as np
+import pennylane as qml
 import pytest
-from numpy.testing import assert_array_almost_equal
 
-# Import modules to test
-from qedge.quantum.circuits import (
-    EntanglementPattern,
-    VariationalQuantumCircuit,
-    VQCConfig,
-)
-from qedge.quantum.kernels import (
-    QKAConfig,
-    QuantumKernelAlignment,
-)
+from qedge.quantum.circuits import ANSATZE, probabilities_circuit, vqc, weight_shape
+from qedge.quantum.kernels import QuantumKernel, parameter_shape, target_alignment
+from qedge.quantum.noise import NoiseConfig, make_device
 from qedge.quantum.zne import (
-    ExtrapolationMethod,
-    MeasurementErrorMitigation,
-    ZeroNoiseExtrapolation,
+    TensoredReadoutMitigation,
     ZNEConfig,
+    achieved_scale_factors,
+    extrapolate,
+    mitigate,
 )
 
 
-class TestVariationalQuantumCircuit:
-    def test_vqc_initialization(self):
-        config = VQCConfig(n_qubits=4, n_layers=2)
-        vqc = VariationalQuantumCircuit(config)
+def _qnode(device, ansatz="strongly_entangling", reupload=False):
+    return qml.QNode(lambda x, w: vqc(x, w, ansatz=ansatz, reupload=reupload), device)
 
-        assert vqc.config.n_qubits == 4
-        assert vqc.config.n_layers == 2
-        assert vqc.params is not None
-        assert vqc.num_params > 0
 
-    def test_vqc_forward_pass(self):
-        config = VQCConfig(n_qubits=4, n_layers=2)
-        vqc = VariationalQuantumCircuit(config)
+@pytest.mark.parametrize("ansatz", ANSATZE)
+def test_vqc_returns_bounded_expectations_per_qubit(ansatz):
+    weights = np.random.default_rng(0).uniform(0, 2 * np.pi, weight_shape(ansatz, 2, 3))
+    out = np.asarray(
+        _qnode(make_device(3, NoiseConfig()), ansatz)(np.array([0.1, 0.2, 0.3]), weights)
+    )
 
-        features = np.random.randn(4)
-        output = vqc.forward(features)
+    assert out.shape == (3,)
+    assert np.all(np.abs(out) <= 1 + 1e-9)
 
-        # Should return probabilities for 2^n states
-        assert output.shape == (16,)
-        assert np.isclose(np.sum(output), 1.0, atol=1e-6)
-        assert np.all(output >= 0)
 
-    def test_vqc_batch_forward(self):
-        config = VQCConfig(n_qubits=4, n_layers=2)
-        vqc = VariationalQuantumCircuit(config)
+def test_reuploading_changes_the_circuit():
+    weights = np.random.default_rng(0).uniform(
+        0, 2 * np.pi, weight_shape("strongly_entangling", 2, 2)
+    )
+    x = np.array([0.4, -0.9])
+    device = make_device(2, NoiseConfig())
 
-        batch = np.random.randn(5, 4)
-        outputs = vqc.batch_forward(batch)
+    plain = np.asarray(_qnode(device)(x, weights))
+    reuploaded = np.asarray(_qnode(device, reupload=True)(x, weights))
 
-        assert outputs.shape == (5, 16)
-        for output in outputs:
-            assert np.isclose(np.sum(output), 1.0, atol=1e-6)
+    assert not np.allclose(plain, reuploaded)
 
-    def test_vqc_different_entanglement_patterns(self):
-        for pattern in EntanglementPattern:
-            config = VQCConfig(n_qubits=4, n_layers=2, entanglement=pattern)
-            vqc = VariationalQuantumCircuit(config)
 
-            features = np.zeros(4)
-            output = vqc.forward(features)
+def test_weight_shape_rejects_unknown_ansatz():
+    with pytest.raises(ValueError, match="Unknown ansatz"):
+        weight_shape("brick", 1, 2)
 
-            assert output.shape == (16,)
 
-    def test_vqc_serialization(self):
-        config = VQCConfig(n_qubits=4, n_layers=2)
-        vqc = VariationalQuantumCircuit(config, seed=42)
+def test_probabilities_sum_to_one():
+    device = make_device(3, NoiseConfig())
+    weights = np.zeros(weight_shape("strongly_entangling", 1, 3))
+    probs = qml.QNode(
+        lambda x, w: probabilities_circuit(x, w, ansatz="strongly_entangling"), device
+    )
 
-        # Serialize
-        data = vqc.to_dict()
+    assert float(np.sum(probs(np.array([0.3, 0.0, 0.0]), weights))) == pytest.approx(1.0)
 
-        # Deserialize
-        vqc_restored = VariationalQuantumCircuit.from_dict(data)
 
-        assert vqc_restored.config.n_qubits == vqc.config.n_qubits
-        assert_array_almost_equal(vqc_restored.params, vqc.params)
+def test_depolarizing_noise_shrinks_expectations():
+    weights = np.zeros(weight_shape("strongly_entangling", 1, 2))
+    x = np.zeros(2)
+    ideal = np.asarray(_qnode(make_device(2, NoiseConfig()))(x, weights))
+    noisy = np.asarray(_qnode(make_device(2, NoiseConfig(p=0.05)))(x, weights))
 
-    def test_vqc_gate_count(self):
-        config = VQCConfig(
-            n_qubits=4,
-            n_layers=2,
-            entanglement=EntanglementPattern.LINEAR,
-        )
-        vqc = VariationalQuantumCircuit(config)
+    np.testing.assert_allclose(ideal, 1.0)
+    assert np.all(noisy < 0.95)
 
-        gate_counts = vqc.get_gate_count()
 
-        assert "CNOT" in gate_counts
-        assert "Rot" in gate_counts or "RY" in gate_counts
-        assert all(count > 0 for count in gate_counts.values())
+@pytest.mark.parametrize(
+    "kwargs", [{"p": 1.0}, {"readout": -0.1}, {"channel": "phase"}, {"shots": 0}]
+)
+def test_noise_config_rejects_invalid_values(kwargs):
+    with pytest.raises(ValueError):
+        NoiseConfig(**kwargs)
 
-    def test_vqc_reproducibility(self):
-        config = VQCConfig(n_qubits=4, n_layers=2)
 
-        vqc1 = VariationalQuantumCircuit(config, seed=42)
-        vqc2 = VariationalQuantumCircuit(config, seed=42)
+def test_shots_give_sampled_estimates():
+    device = make_device(1, NoiseConfig(), seed=0)
 
-        features = np.array([0.1, 0.2, 0.3, 0.4])
+    @qml.qnode(device)
+    def circuit():
+        qml.RY(np.pi / 2, wires=0)
+        return qml.expval(qml.PauliZ(0))
 
-        output1 = vqc1.forward(features)
-        output2 = vqc2.forward(features)
+    sampled = qml.set_shots(circuit, shots=200)()
+    # The exact value is 0. Unseeded, 200 shots give exactly 0 about 6% of the time.
+    assert abs(float(sampled)) < 0.3 and float(sampled) != 0.0
 
-        assert_array_almost_equal(output1, output2)
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"method": "linear"}, "Unknown ZNE method"),
+        ({"scale_factors": (2.0, 3.0)}, "start at 1"),
+        ({"scale_factors": (1.0, 1.0)}, "increase"),
+        ({"method": "poly", "order": 2, "scale_factors": (1.0, 3.0)}, "order"),
+    ],
+)
+def test_zne_config_validation(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        ZNEConfig(**kwargs)
 
-class TestQuantumKernelAlignment:
-    def test_qka_initialization(self):
-        config = QKAConfig(n_qubits=4, n_layers=2)
-        qka = QuantumKernelAlignment(config)
 
-        assert qka.config.n_qubits == 4
-        assert qka.feature_map_params is not None
+@pytest.mark.parametrize(
+    ("config", "values", "expected"),
+    [
+        (ZNEConfig(scale_factors=(1.0, 3.0)), [0.8, 0.4], 1.0),
+        (ZNEConfig("poly", (1.0, 2.0, 3.0), order=2), [0.9, 0.6, 0.1], 1.0),
+        (ZNEConfig("exponential", (1.0, 2.0, 3.0)), [np.exp(-0.2 * s) for s in (1, 2, 3)], 1.0),
+    ],
+)
+def test_extrapolators_recover_known_models(config, values, expected):
+    assert extrapolate(config.scale_factors, values, config) == pytest.approx(expected, abs=1e-9)
 
-    def test_kernel_evaluation(self):
-        config = QKAConfig(n_qubits=4, n_layers=1)
-        qka = QuantumKernelAlignment(config)
 
-        x1 = np.random.randn(4)
-        x2 = np.random.randn(4)
+def test_partial_folding_reports_the_factor_it_reaches():
+    tape = qml.tape.QuantumScript([qml.RX(0.1, 0), qml.RY(0.2, 0), qml.RZ(0.3, 0)])
 
-        kernel_value = qka.evaluate_kernel(x1, x2)
+    assert achieved_scale_factors(tape, (1.0, 1.5, 3.0)) == [1.0, 5 / 3, 3.0]
 
-        # Kernel value should be in [0, 1]
-        assert 0 <= kernel_value <= 1
 
-    def test_kernel_self_similarity(self):
-        config = QKAConfig(n_qubits=4, n_layers=1)
-        qka = QuantumKernelAlignment(config)
+def test_mitigated_qnode_is_differentiable_and_needs_odd_factors():
+    torch = pytest.importorskip("torch")
+    device = make_device(1, NoiseConfig(p=0.02))
 
-        x = np.random.randn(4)
+    def circuit(theta):
+        qml.RX(theta, wires=0)
+        return qml.expval(qml.PauliZ(0))
 
-        kernel_value = qka.evaluate_kernel(x, x)
+    qnode = qml.QNode(circuit, device, interface="torch", diff_method="backprop")
+    theta = torch.tensor(0.3, requires_grad=True)
+    value = mitigate(qnode, ZNEConfig())(theta)
+    value.backward()
 
-        # k(x, x) should be close to 1
-        assert np.isclose(kernel_value, 1.0, atol=0.1)
+    assert float(value.detach()) == pytest.approx(np.cos(0.3), abs=2e-3)
+    assert float(theta.grad) == pytest.approx(-np.sin(0.3), abs=1e-2)
+    with pytest.raises(ValueError, match="odd integer"):
+        mitigate(qnode, ZNEConfig(scale_factors=(1.0, 2.0)))
 
-    def test_kernel_matrix_computation(self):
-        config = QKAConfig(n_qubits=4, n_layers=1)
-        qka = QuantumKernelAlignment(config)
 
-        X = np.random.randn(5, 4)
-        K = qka.compute_kernel_matrix(X)
+@pytest.mark.parametrize("method", ["inverse", "least_squares"])
+def test_tensored_readout_mitigation_recovers_the_ideal_distribution(method):
+    device = make_device(3, NoiseConfig(readout=0.05))
+    mitigation = TensoredReadoutMitigation(3, method)
+    mitigation.calibrate(device)
 
-        # Kernel matrix should be symmetric
-        assert K.shape == (5, 5)
-        assert_array_almost_equal(K, K.T, decimal=5)
+    def circuit():
+        qml.PauliX(wires=0)
+        qml.Hadamard(wires=1)
+        return qml.probs(wires=range(3))
 
-        # Diagonal should be close to 1
-        assert np.allclose(np.diag(K), 1.0, atol=0.1)
+    measured = qml.QNode(circuit, device)()
+    ideal = qml.QNode(circuit, make_device(3, NoiseConfig()))()
 
-    def test_kernel_alignment_score(self):
-        config = QKAConfig(n_qubits=4, n_layers=1)
-        qka = QuantumKernelAlignment(config)
+    assert mitigation.calibration_circuits == 6
+    np.testing.assert_allclose(mitigation.confusion[0], [[0.95, 0.05], [0.05, 0.95]], atol=1e-9)
+    assert np.abs(measured - ideal).max() > 0.04
+    np.testing.assert_allclose(mitigation.mitigate(measured), ideal, atol=1e-4)
 
-        K1 = np.eye(5)
-        K2 = np.eye(5)
 
-        alignment = qka.kernel_alignment_score(K1, K2)
+def test_readout_mitigation_requires_calibration_and_a_known_method():
+    with pytest.raises(ValueError, match="method"):
+        TensoredReadoutMitigation(2, "iterative")
+    with pytest.raises(RuntimeError, match="calibrate"):
+        TensoredReadoutMitigation(2).mitigate(np.full(4, 0.25))
 
-        # Same matrices should have alignment 1
-        assert np.isclose(alignment, 1.0, atol=1e-6)
 
-    @pytest.mark.slow
-    def test_kernel_alignment_optimization(self):
-        config = QKAConfig(
-            n_qubits=4,
-            n_layers=1,
-            max_iterations=10,  # Reduced for testing
-        )
-        qka = QuantumKernelAlignment(config)
+def test_kernel_rejects_bad_shapes_and_feature_maps():
+    with pytest.raises(ValueError, match="Unknown feature map"):
+        QuantumKernel(2, kind="pauli")
+    with pytest.raises(ValueError, match="shape"):
+        QuantumKernel(2, params=np.ones((3, 3)))
+    with pytest.raises(ValueError, match="features"):
+        QuantumKernel(2)(np.zeros(3), np.zeros(3))
 
-        X = np.random.randn(10, 4)
-        y = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
 
-        result = qka.align_to_target(X, y, kernel_type="ideal")
+def test_feature_maps_differ_and_matrix_is_symmetric():
+    x = np.random.default_rng(0).normal(size=(5, 3))
+    angle, zz = QuantumKernel(3, kind="angle").matrix(x), QuantumKernel(3, kind="zz").matrix(x)
 
-        assert "final_alignment" in result
-        assert "n_iterations" in result
-        assert result["final_alignment"] >= 0
+    assert not np.allclose(angle, zz)
+    np.testing.assert_allclose(angle, angle.T)
+    np.testing.assert_allclose(np.diag(angle), 1.0)
+    assert QuantumKernel(3).matrix(x[:2], x).shape == (2, 5)
+    assert parameter_shape("zz", 2, 3) == (2, 5)
 
-    def test_qka_serialization(self):
-        config = QKAConfig(n_qubits=4, n_layers=1)
-        qka = QuantumKernelAlignment(config, seed=42)
 
-        data = qka.to_dict()
-        qka_restored = QuantumKernelAlignment.from_dict(data)
-
-        assert qka_restored.config.n_qubits == qka.config.n_qubits
-        assert_array_almost_equal(
-            qka_restored.feature_map_params,
-            qka.feature_map_params,
-        )
-
-
-class TestZeroNoiseExtrapolation:
-    def test_zne_initialization(self):
-        config = ZNEConfig(scale_factors=[1.0, 2.0, 3.0])
-        zne = ZeroNoiseExtrapolation(config)
-
-        assert len(zne.config.scale_factors) == 3
-
-    def test_linear_extrapolation(self):
-        config = ZNEConfig(
-            scale_factors=[1.0, 2.0, 3.0],
-            extrapolation_method=ExtrapolationMethod.LINEAR,
-        )
-        zne = ZeroNoiseExtrapolation(config)
-
-        # Linear decay: f(λ) = 1.0 - 0.1λ
-        scales = np.array([1.0, 2.0, 3.0])
-        values = 1.0 - 0.1 * scales
-
-        result = zne.extrapolate(scales, values)
-
-        # Should extrapolate to ~1.0 at λ=0
-        assert np.isclose(result["mitigated_value"], 1.0, atol=0.05)
-
-    def test_polynomial_extrapolation(self):
-        config = ZNEConfig(
-            scale_factors=[1.0, 1.5, 2.0, 2.5],
-            extrapolation_method=ExtrapolationMethod.POLYNOMIAL,
-            poly_degree=2,
-        )
-        zne = ZeroNoiseExtrapolation(config)
-
-        # Quadratic decay
-        scales = np.array([1.0, 1.5, 2.0, 2.5])
-        values = 1.0 - 0.1 * scales - 0.02 * scales**2
-
-        result = zne.extrapolate(scales, values)
-
-        assert "mitigated_value" in result
-        assert result["method_used"] == "polynomial"
-
-    def test_richardson_extrapolation(self):
-        config = ZNEConfig(
-            scale_factors=[1.0, 2.0, 3.0],
-            extrapolation_method=ExtrapolationMethod.RICHARDSON,
-        )
-        zne = ZeroNoiseExtrapolation(config)
-
-        scales = np.array([1.0, 2.0, 3.0])
-        values = np.array([0.9, 0.8, 0.7])
-
-        result = zne.extrapolate(scales, values)
-
-        assert "mitigated_value" in result
-        assert result["method_used"] == "richardson"
-
-    def test_zne_config_validation(self):
-        # Should raise for less than 2 scale factors
-        with pytest.raises(ValueError):
-            ZNEConfig(scale_factors=[1.0])
-
-        # Should raise for scale factor < 1
-        with pytest.raises(ValueError):
-            ZNEConfig(scale_factors=[0.5, 1.0, 1.5])
-
-
-class TestMeasurementErrorMitigation:
-    def test_mem_initialization(self):
-        mem = MeasurementErrorMitigation(n_qubits=2)
-
-        assert mem.n_qubits == 2
-        assert not mem._is_calibrated
-
-    def test_mem_mitigation_preserves_distribution(self):
-        mem = MeasurementErrorMitigation(n_qubits=2, method="least_squares")
-
-        # Set up fake calibration
-        mem.calibration_matrix = np.eye(4)
-        mem.inverse_matrix = np.eye(4)
-        mem._is_calibrated = True
-
-        measured_probs = np.array([0.3, 0.2, 0.25, 0.25])
-        mitigated = mem.mitigate(measured_probs)
-
-        # Should be valid probability distribution
-        assert np.isclose(np.sum(mitigated), 1.0)
-        assert np.all(mitigated >= 0)
-
-
-# Run tests with: pytest tests/unit/test_quantum.py -v
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_target_alignment_is_one_for_the_ideal_kernel():
+    y = np.array([1, 1, -1, -1])
+    assert target_alignment(np.outer(y, y), y) == pytest.approx(1.0)

@@ -1,12 +1,14 @@
 """Every configurable option either has its own implementation or raises."""
 
 import numpy as np
+import pennylane as qml
 import pytest
 
 from qedge.fl.strategies import SERVER_STRATEGIES, ServerStrategy
-from qedge.quantum.circuits import AnsatzType, VariationalQuantumCircuit, VQCConfig
-from qedge.quantum.kernels import FeatureMapType, QKAConfig, QuantumKernelAlignment
-from qedge.quantum.zne import MeasurementErrorMitigation
+from qedge.quantum.circuits import ANSATZE, vqc, weight_shape
+from qedge.quantum.kernels import FEATURE_MAPS, QuantumKernel
+from qedge.quantum.noise import CHANNELS, NoiseConfig, make_device
+from qedge.quantum.zne import METHODS, TensoredReadoutMitigation, ZNEConfig, extrapolate
 
 
 def _assert_pairwise_distinct(outputs):
@@ -19,25 +21,52 @@ def _assert_pairwise_distinct(outputs):
             assert not same, f"{label[0]} and {label[1]} compute the same result"
 
 
-def test_every_ansatz_type_builds_a_distinct_circuit():
-    features = np.array([0.1, 0.2, 0.3, 0.4])
-    outputs = {
-        ansatz: VariationalQuantumCircuit(
-            VQCConfig(n_qubits=4, n_layers=2, ansatz_type=ansatz), seed=7
-        ).forward(features)
-        for ansatz in AnsatzType
-    }
-    _assert_pairwise_distinct(outputs)
+def _vqc_output(ansatz, noise=None):
+    weights = np.random.default_rng(7).uniform(0, 2 * np.pi, weight_shape(ansatz, 2, 3))
+    qnode = qml.QNode(
+        lambda x, w: vqc(x, w, ansatz=ansatz, reupload=False),
+        make_device(3, noise or NoiseConfig()),
+    )
+    return qnode(np.array([0.1, 0.2, 0.3]), weights)
 
 
-def test_every_feature_map_type_builds_a_distinct_kernel():
+def test_every_ansatz_builds_a_distinct_circuit():
+    _assert_pairwise_distinct({ansatz: _vqc_output(ansatz) for ansatz in ANSATZE})
+
+
+def test_every_noise_channel_has_its_own_effect():
+    _assert_pairwise_distinct(
+        {
+            channel: _vqc_output("strongly_entangling", NoiseConfig(p=0.05, channel=channel))
+            for channel in CHANNELS
+        }
+    )
+
+
+def test_every_feature_map_builds_a_distinct_kernel():
     x1, x2 = np.array([0.3, -0.7, 1.1]), np.array([-0.2, 0.9, 0.4])
-    outputs = {
-        fmap: QuantumKernelAlignment(
-            QKAConfig(n_qubits=3, n_layers=1, feature_map_type=fmap), seed=7
-        ).evaluate_kernel(x1, x2)
-        for fmap in FeatureMapType
-    }
+    _assert_pairwise_distinct({kind: QuantumKernel(3, kind=kind)(x1, x2) for kind in FEATURE_MAPS})
+
+
+def test_every_zne_method_has_its_own_fit():
+    scales = (1.0, 2.0, 3.0, 4.0)
+    values = [0.9, 0.7, 0.62, 0.45]
+    _assert_pairwise_distinct(
+        {
+            method: extrapolate(scales, values, ZNEConfig(method, scales, order=2))
+            for method in METHODS
+        }
+    )
+
+
+def test_every_readout_mitigation_method_has_its_own_rule():
+    device = make_device(2, NoiseConfig(readout=0.1))
+    measured = np.array([0.05, 0.6, 0.3, 0.05])
+    outputs = {}
+    for method in ("inverse", "least_squares"):
+        mitigation = TensoredReadoutMitigation(2, method)
+        mitigation.calibrate(device)
+        outputs[method] = mitigation.mitigate(measured)
     _assert_pairwise_distinct(outputs)
 
 
@@ -54,35 +83,14 @@ def test_every_aggregation_strategy_has_its_own_rule():
     _assert_pairwise_distinct(outputs)
 
 
-def test_measurement_error_mitigation_rejects_unknown_method():
-    with pytest.raises(ValueError, match="method"):
-        MeasurementErrorMitigation(n_qubits=2, method="bogus")
-
-
-def test_align_to_target_rejects_unknown_target_kernel():
-    qka = QuantumKernelAlignment(QKAConfig(n_qubits=2, n_layers=1, max_iterations=1), seed=0)
-    X = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
-    y = np.array([0, 1, 0])
-    with pytest.raises(ValueError, match="kernel_type"):
-        qka.align_to_target(X, y, kernel_type="bogus")
-
-
-def test_draw_rejects_unknown_style():
-    vqc = VariationalQuantumCircuit(VQCConfig(n_qubits=2, n_layers=1), seed=0)
-    with pytest.raises(ValueError, match="style"):
-        vqc.draw(style="bogus")
-
-
-def test_hardware_efficient_ansatz_sizes_parameters_from_rotation_gates():
-    config = VQCConfig(
-        n_qubits=3,
-        n_layers=2,
-        ansatz_type=AnsatzType.HARDWARE_EFFICIENT,
-        rotation_gates=["RY", "Rot"],
-    )
-    vqc = VariationalQuantumCircuit(config, seed=0)
-
-    probs = vqc.forward(np.array([0.1, 0.2, 0.3]))
-
-    assert vqc.num_params == 2 * 3 * 4
-    assert np.isclose(np.sum(probs), 1.0)
+def test_unknown_options_raise():
+    with pytest.raises(ValueError):
+        weight_shape("brick", 1, 2)
+    with pytest.raises(ValueError):
+        QuantumKernel(2, kind="pauli")
+    with pytest.raises(ValueError):
+        ZNEConfig(method="adaptive")
+    with pytest.raises(ValueError):
+        NoiseConfig(channel="phase_flip")
+    with pytest.raises(ValueError):
+        ServerStrategy("scaffold")

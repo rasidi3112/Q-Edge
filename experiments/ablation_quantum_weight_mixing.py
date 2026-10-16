@@ -22,24 +22,50 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pennylane as qml
 from numpy.typing import NDArray
 
 from experiments.common import mean_std, write_summary
 from qedge.fl.simulation import SimulationConfig, run_simulation
 from qedge.fl.strategies import Weights, fedavg
-from qedge.quantum.circuits import VariationalQuantumCircuit, VQCConfig
 
 CLASSICAL_WEIGHT = 0.7
 N_QUBITS = 8
+
+
+N_LAYERS = 4
+
+
+def old_circuit(seed: int) -> Any:
+    """Rebuild the removed ``VariationalQuantumCircuit`` with its defaults.
+
+    8 qubits, 4 layers, RY re-uploading, one Rot per qubit, all-to-all CNOTs,
+    weights from normal(0, sqrt(2/24)); returns basis-state probabilities.
+    """
+    weights = np.random.default_rng(seed).normal(
+        0, np.sqrt(2.0 / (N_QUBITS * 3)), (N_LAYERS, N_QUBITS, 3)
+    )
+
+    @qml.qnode(qml.device("default.qubit", wires=N_QUBITS))
+    def circuit(features: Any) -> Any:
+        for layer in range(N_LAYERS):
+            for i in range(N_QUBITS):
+                qml.RY(features[i], wires=i)
+            for q in range(N_QUBITS):
+                qml.Rot(*weights[layer, q], wires=q)
+            for i in range(N_QUBITS):
+                for j in range(i + 1, N_QUBITS):
+                    qml.CNOT(wires=[i, j])
+        return qml.probs(wires=range(N_QUBITS))
+
+    return circuit
 
 
 class QuantumWeightMixing:
     """The pre-0.2.0 hybrid aggregation rule, kept only for this ablation."""
 
     def __init__(self, seed: int) -> None:
-        self.vqc = VariationalQuantumCircuit(
-            VQCConfig(n_qubits=N_QUBITS, n_layers=4, data_reuploading=True), seed=seed
-        )
+        self.circuit = old_circuit(seed)
 
     def _compress(self, flat: NDArray[np.float64]) -> NDArray[np.float64]:
         stride = max(len(flat) // N_QUBITS, 1)
@@ -64,7 +90,7 @@ class QuantumWeightMixing:
         averaged = fedavg(updates)
         names = list(averaged)
         flat = np.concatenate([averaged[n].ravel() for n in names]).astype(np.float64)
-        log_probs = np.log(self.vqc.forward(self._compress(flat)) + 1e-10)
+        log_probs = np.log(np.asarray(self.circuit(self._compress(flat))) + 1e-10)
         encoding = (log_probs / np.max(np.abs(log_probs)))[:N_QUBITS]
         mixed = CLASSICAL_WEIGHT * flat + (1 - CLASSICAL_WEIGHT) * self._expand(encoding, len(flat))
         result, offset = {}, 0
