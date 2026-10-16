@@ -36,23 +36,12 @@ Q-Edge is an **experimental platform** that combines federated learning, quantum
 | Technology | Description | Status |
 |------------|-------------|--------|
 | **Federated Learning** | FedAvg, FedProx, FedAdam, FedYogi on non-IID splits | Simulated clients (in-process loop and Flower apps) |
-| **Quantum ML** | Variational Quantum Circuits (VQC) & Quantum Kernel | PennyLane Simulator |
+| **Quantum ML** | Hybrid VQC classifier head, fidelity kernels, ZNE and readout mitigation | Simulated (PennyLane `default.qubit`, `default.mixed` with noise) |
 | **Post-Quantum Crypto** | ML-KEM, ML-DSA (FIPS 203/204), hybrid X25519 | liboqs; carries every client update |
 
-### Why Quantum?
-
-> *"Why does FL aggregation need quantum?"*
-
-| Aspect | Classical FL | Quantum-Enhanced FL |
-|--------|--------------|---------------------|
-| **Privacy** | Differential privacy | + Quantum key distribution potential |
-| **Optimization** | Gradient descent | Variational quantum optimization |
-| **Scalability** | O(n) parameters | Quantum parallelism for high-dim data |
-
-**Honest take:** At this stage, quantum advantages are still *theoretical* and only running on simulators. But research shows potential for:
-- Better resistance against adversarial attacks
-- More efficient loss function landscape exploration
-- Quantum-secure communication between FL clients
+Whether a small VQC head helps at all is an open question here: Q-Edge
+compares it with a classical head of matched size under the same data
+split, noise and mitigation, and reports the result either way.
 
 ---
 
@@ -219,6 +208,39 @@ breast_cancer), it lowers final accuracy from 0.974 ± 0.000 to 0.918 ± 0.013
 ([`results/summary/ablation_quantum_weight_mixing.json`](results/summary/ablation_quantum_weight_mixing.json)),
 so it was removed.
 
+### Hybrid model, noise and error mitigation
+
+```bash
+qedge simulate --model hybrid-vqc --qubits 4 --layers 2 --noise 0.01 --zne richardson
+qedge simulate --model classical-head --qubits 4 --layers 2   # matched baseline
+```
+
+`config.yaml` records the head's parameter count and the noise factors that
+folding reached. With noise and ZNE every forward pass runs three folded
+circuits: the command above took 261 s for 10 clients and 30 rounds on a
+laptop CPU (0.965 final accuracy), against about 5 s noiseless.
+
+ZNE on 20 random 4-qubit circuits (2 layers, ⟨Z0 Z1⟩, scale factors 1, 3, 5),
+mean absolute error from the noiseless value
+([`results/summary/zne.json`](results/summary/zne.json),
+`python -m experiments.zne_accuracy`). With three factors Richardson and a
+quadratic fit coincide:
+
+| Noise | p | Unmitigated | Richardson | Exponential |
+|---|---|---|---|---|
+| depolarizing | 0.001 | 0.0060 | 0.0002 | 0.0002 |
+| depolarizing | 0.01 | 0.0552 | 0.0051 | 0.0026 |
+| amplitude damping | 0.001 | 0.0046 | 0.0004 | 0.0015 |
+| amplitude damping | 0.01 | 0.0431 | 0.0050 | 0.0056 |
+
+Diagnostics ([`results/summary/quantum_diagnostics.json`](results/summary/quantum_diagnostics.json)):
+the variance of a gradient component with 8 strongly entangling layers falls
+from 0.14 (2 qubits) to 0.0022 (8 qubits), about 4x per two
+qubits, the barren-plateau scaling of McClean et al. (2018). Off-diagonal
+`zz` kernel values on breast_cancer features drop to a mean of
+0.005 at 8 qubits (variance 1.5e-04), so that kernel
+is close to the identity; the `angle` map keeps a mean of 0.16.
+
 ### Running the server
 
 ```bash
@@ -279,9 +301,12 @@ flutter run -d chrome  # or your preferred device
 Q-Edge/
 ├── src/qedge/
 │   ├── quantum/
-│   │   ├── circuits.py       # Variational quantum circuits
-│   │   ├── kernels.py        # Quantum kernel alignment
-│   │   └── zne.py            # Zero-noise extrapolation, readout mitigation
+│   │   ├── circuits.py       # Angle embedding and variational layers
+│   │   ├── diagnostics.py    # Gradient variance, kernel concentration, expressibility
+│   │   ├── kernels.py        # Fidelity kernels with qml.adjoint
+│   │   ├── models.py         # Hybrid VQC and matched classical head (PyTorch)
+│   │   ├── noise.py          # Depolarizing, amplitude damping and readout noise
+│   │   └── zne.py            # ZNE via fold_global, tensored readout mitigation
 │   ├── fl/
 │   │   ├── compression.py    # Top-k with error feedback
 │   │   ├── flower_app.py     # Flower ClientApp and ServerApp
@@ -333,21 +358,19 @@ Mobile Device B ─┼──────────────▶ Q-Edge Serve
 Mobile Device C ─┘
 ```
 
-### 2. Quantum Circuit
+### 2. Hybrid model
 
-```python
-# Variational quantum circuit (qedge.quantum.circuits)
-@qml.qnode(dev)
-def vqc(params, data):
-    # Data encoding
-    for i, x in enumerate(data):
-        qml.RY(x, wires=i)
-
-    # Parameterized layers
-    qml.StronglyEntanglingLayers(params, wires=range(n_qubits))
-
-    return qml.probs(wires=range(n_qubits))
 ```
+features -> Linear -> ReLU -> Linear -> pi*tanh -> AngleEmbedding (RY)
+         -> StronglyEntanglingLayers (or RY/RZ + CNOT ring) -> <Z_i> -> Linear -> logits
+```
+
+`hybrid-vqc` runs the circuit through `qml.qnn.TorchLayer`;
+`classical-head` swaps it for a tanh MLP with about the same number of
+parameters (4 qubits, 2 layers: 24 vs 22). Noise is attached to the device
+(`default.mixed`), so it also acts on folded gates. Without shots, gradients
+come from backpropagation through the simulator; with `--shots` from the
+parameter-shift rule ([ADR 0009](docs/decisions/0009-noise-and-zne-in-training.md)).
 
 ### 3. Post-Quantum Security
 

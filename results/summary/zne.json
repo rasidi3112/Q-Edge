@@ -1,0 +1,118 @@
+{
+  "description": "Error of noisy and ZNE-mitigated expectation values on random circuits.",
+  "setup": {
+    "n_qubits": 4,
+    "layers": 2,
+    "circuits": 20,
+    "observable": "Z0 Z1",
+    "scale_factors": [
+      1,
+      3,
+      5
+    ],
+    "folding": "global"
+  },
+  "results": [
+    {
+      "channel": "depolarizing",
+      "p": 0.001,
+      "abs_error": {
+        "unmitigated": {
+          "mean": 0.005965875231566721,
+          "std": 0.004287234368210274
+        },
+        "richardson": {
+          "mean": 0.0001988347089631812,
+          "std": 0.00015705329802590117
+        },
+        "poly2": {
+          "mean": 0.0001988347089631812,
+          "std": 0.00015705329802590117
+        },
+        "exponential": {
+          "mean": 0.0002143801664740563,
+          "std": 0.00014977303700049652
+        }
+      }
+    },
+    {
+      "channel": "depolarizing",
+      "p": 0.01,
+      "abs_error": {
+        "unmitigated": {
+          "mean": 0.0552350330690101,
+          "std": 0.039821982653076654
+        },
+        "richardson": {
+          "mean": 0.005093417050216639,
+          "std": 0.0036323030656112165
+        },
+        "poly2": {
+          "mean": 0.005093417050216639,
+          "std": 0.0036323030656112165
+        },
+        "exponential": {
+          "mean": 0.0025758742967550855,
+          "std": 0.0020226285854820602
+        }
+      }
+    },
+    {
+      "channel": "amplitude_damping",
+      "p": 0.001,
+      "abs_error": {
+        "unmitigated": {
+          "mean": 0.0045729415740177306,
+          "std": 0.0033906409249290646
+        },
+        "richardson": {
+          "mean": 0.0003554618825183469,
+          "std": 0.0002547467558872122
+        },
+        "poly2": {
+          "mean": 0.0003554618825183469,
+          "std": 0.0002547467558872122
+        },
+        "exponential": {
+          "mean": 0.0015000881960470385,
+          "std": 0.003776087581740129
+        }
+      }
+    },
+    {
+      "channel": "amplitude_damping",
+      "p": 0.01,
+      "abs_error": {
+        "unmitigated": {
+          "mean": 0.04314273917531643,
+          "std": 0.03218627569439976
+        },
+        "richardson": {
+          "mean": 0.005022392788605214,
+          "std": 0.003378089183840238
+        },
+        "poly2": {
+          "mean": 0.005022392788605214,
+          "std": 0.003378089183840238
+        },
+        "exponential": {
+          "mean": 0.005577416952514792,
+          "std": 0.004435979634341396
+        }
+      }
+    }
+  ],
+  "environment": {
+    "python": "3.13.5",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "packages": {
+      "q-edge": "0.2.0.dev0",
+      "numpy": "2.5.4",
+      "torch": "2.14.1",
+      "scikit-learn": "1.9.1",
+      "pennylane": "0.45.1",
+      "flwr": "1.40.0"
+    }
+  }
+}
