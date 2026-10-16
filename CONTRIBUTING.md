@@ -12,7 +12,8 @@ git clone https://github.com/rasidi3112/Q-Edge.git
 cd Q-Edge
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev,server]"
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[dev,server,pqc-pure,fl,report]"
 pre-commit install
 ```
 
@@ -33,6 +34,19 @@ pytest -m "not slow"
 Tests that take more than a few seconds are marked `@pytest.mark.slow` and run
 in a separate weekly job (`pytest -m slow`).
 
+The Flutter dashboard has its own checks, also run in CI:
+
+```bash
+cd mobile_app
+dart format --output=none --set-exit-if-changed lib test
+flutter analyze
+flutter test
+```
+
+Numbers in the README or `docs/` must come from `results/summary/*.json`
+written by a script in `experiments/` or `bench/`; regenerate
+`docs/results.md` with `python -m experiments.report` instead of editing it.
+
 ## Pull requests
 
 1. Fork the repository and create a branch.
@@ -44,4 +58,4 @@ in a separate weekly job (`pytest -m slow`).
 
 - Python: ruff (lint and format), type hints, Google-style docstrings for
   public API.
-- Dart: the Flutter style guide.
+- Dart: `dart format` and `flutter_lints`.

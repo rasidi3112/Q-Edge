@@ -1,333 +1,115 @@
-<div align="center">
-
 # Q-Edge
 
-### Federated Hybrid Quantum-Neural Network Platform
+[![CI](https://github.com/rasidi3112/Q-Edge/actions/workflows/ci.yml/badge.svg)](https://github.com/rasidi3112/Q-Edge/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.11-3.13](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
 
-<img src="https://img.shields.io/badge/Research_Project-Quantum_ML-6C63FF?style=for-the-badge" alt="Research"/>
+Q-Edge is a research testbed for federated learning with hybrid
+quantum-classical models and post-quantum protection of client updates. It
+answers three questions with reproducible numbers:
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![PennyLane](https://img.shields.io/badge/PennyLane-Quantum-00D4AA?style=for-the-badge&logo=atom&logoColor=white)](https://pennylane.ai)
-[![Flutter](https://img.shields.io/badge/Flutter-Mobile-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+1. On non-IID data, does a small variational quantum circuit (VQC) head do
+   as well as a classical head with the same number of parameters, with and
+   without noise and zero-noise extrapolation?
+2. What does post-quantum protection (ML-KEM-768, ML-DSA-65, hybrid
+   X25519 + ML-KEM-768 and secure aggregation) cost per round?
+3. How much damage can malicious clients do, how much do robust
+   aggregation rules help, and how do those rules conflict with secure
+   aggregation?
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-green?style=flat-square)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/rasidi3112/q-edge?style=flat-square)](https://github.com/rasidi3112/q-edge/stargazers)
-[![Forks](https://img.shields.io/github/forks/rasidi3112/q-edge?style=flat-square)](https://github.com/rasidi3112/q-edge/network/members)
+Negative answers count as results. Every number below comes from
+`results/summary/*.json`, which `make reproduce` regenerates;
+[`docs/results.md`](docs/results.md) has the full tables and figures.
 
-<br/>
+## What it is and what it is not
 
-**Exploring the future of AI: Where Quantum Computing meets Federated Learning**
+It is:
 
-*Research/Educational Project — Not Production Ready*
+- A federated simulator (`qedge simulate`) on scikit-learn's breast_cancer
+  and digits with Dirichlet label skew. Strategies: FedAvg, FedProx,
+  FedAdam and FedYogi. Also top-k compression, attacks, robust rules and
+  secure aggregation. The same client and server code runs as Flower 1.40
+  apps (`flwr run experiments/flower`).
+- Hybrid PyTorch models with a PennyLane VQC head, simulated gate and
+  readout noise, ZNE by global folding, and diagnostics (gradient variance,
+  kernel concentration, expressibility).
+- A FastAPI server with admin enrollment, ML-DSA challenge-response login,
+  a signed X25519 + ML-KEM-768 transport, validated rounds, server-sent
+  events and Prometheus metrics. A read-only Flutter dashboard shows its
+  state.
 
-<br/>
+It is not:
 
-[Documentation](#-quick-start) • [Quick Start](#-quick-start) • [Contributing](#-contributing) • [License](#-license)
+- Quantum hardware. All circuits run on simulators (`default.qubit`,
+  `default.mixed`).
+- A real deployment. Clients are simulated in one process or are Python
+  scripts; there is no mobile training.
+- Audited cryptography. The hybrid KEM combiner, the transport and the
+  secure aggregation protocol are this project's own constructions. The
+  pure-Python backend is not constant-time.
+- Evidence of quantum advantage. In these experiments the VQC head is never
+  clearly better than the classical head.
 
-</div>
+## Architecture
 
----
-
-## What is Q-Edge?
-
-Q-Edge is an **experimental platform** that combines federated learning, quantum machine learning and post-quantum cryptography:
-
-| Technology | Description | Status |
-|------------|-------------|--------|
-| **Federated Learning** | FedAvg, FedProx, FedAdam, FedYogi on non-IID splits | Simulated clients (in-process loop and Flower apps) |
-| **Quantum ML** | Hybrid VQC classifier head, fidelity kernels, ZNE and readout mitigation | Simulated (PennyLane `default.qubit`, `default.mixed` with noise) |
-| **Post-Quantum Crypto** | ML-KEM, ML-DSA (FIPS 203/204), hybrid X25519 | liboqs; carries every client update |
-
-Whether a small VQC head helps at all is an open question here: Q-Edge
-compares it with a classical head of matched size under the same data
-split, noise and mitigation, and reports the result either way.
-
----
-
-## Key Features
-
+```mermaid
+flowchart LR
+  subgraph clients["FL clients"]
+    sim["qedge simulate<br/>(in-process clients)"]
+    remote["RemoteClient<br/>(Python)"]
+  end
+  subgraph server["qedge-api"]
+    auth["enrollment + ML-DSA login"]
+    transport["X25519 + ML-KEM-768<br/>handshake, ChaCha20-Poly1305"]
+    rounds["rounds: FedAvg or<br/>robust rule"]
+    db[("SQL + blobs")]
+  end
+  dash["Flutter dashboard<br/>(read-only)"]
+  q["PennyLane simulators<br/>VQC, noise, ZNE"]
+  remote -- "sealed updates" --> transport --> rounds --> db
+  remote -- "token" --> auth
+  dash -- "REST + SSE" --> rounds
+  sim --> q
+  rounds -. "Celery run_circuit" .-> q
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Q-EDGE ARCHITECTURE                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   FL clients                Backend              Quantum        │
-│   ┌─────────────┐          ┌─────────────┐      ┌───────────┐   │
-│   │ Python      │ ──PQC──▶ │  FastAPI    │ ───▶ │ PennyLane │   │
-│   │ RemoteClient│          │  + Celery   │      │ Circuits  │   │
-│   └─────────────┘          └─────▲───────┘      └───────────┘   │
-│   Flutter dashboard ── REST/SSE ─┘ (read-only, no crypto)       │
-│                                                                 │
-│   Security: X25519 + ML-KEM-768, ML-DSA-65 (liboqs)             │
-│   Aggregation: FedAvg, FedProx, FedAdam, FedYogi                │
-│   Error Mitigation: Zero-Noise Extrapolation                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
 
----
+Details: [`docs/architecture.md`](docs/architecture.md); decisions:
+[`docs/decisions/`](docs/decisions/); threats:
+[`docs/threat-model.md`](docs/threat-model.md).
 
-## Important Disclaimer
-
-<table>
-<tr>
-<td width="50%">
-
-### What This IS
-- Educational/research project
-- Working quantum circuits on simulator
-- Learning resource for FL + QML + PQC
-- Architecture proof-of-concept
-
-</td>
-<td width="50%">
-
-### What This is NOT
-- Production-ready software
-- Connected to real quantum hardware
-- Audited cryptography (the hybrid KEM and transport are this project's own designs)
-- Evaluated beyond small datasets (scikit-learn breast_cancer and digits only)
-
-</td>
-</tr>
-</table>
-
----
-
-## Quick Start
-
-### Prerequisites
+## Quickstart
 
 ```bash
-Python 3.11+
-Flutter 3.0+
-Docker (optional)
+git clone https://github.com/rasidi3112/Q-Edge.git && cd Q-Edge
+python -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # optional: CPU-only torch
+pip install -e ".[fl,pqc-pure]"
+
+qedge demo                       # one run of each component, about 5 s
+qedge simulate --dataset breast_cancer --clients 10 --rounds 30 --alpha 0.5 --strategy fedavg
+qedge simulate --model hybrid-vqc --qubits 4 --layers 2 --noise 0.01 --zne richardson
+qedge simulate --dataset digits --model mlp --attack scaling --attack-fraction 0.3 --defense multi_krum
+qedge simulate --secure-aggregation
 ```
 
-### Installation
-
-```bash
-git clone https://github.com/rasidi3112/Q-Edge.git
-cd Q-Edge
-
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Core quantum and aggregation modules
-pip install -e .
-
-# Run one pass of each component
-qedge demo
-```
-
-Dependencies are declared only in `pyproject.toml`. Optional extras:
+Each `simulate` run writes `results/runs/<run_id>/config.yaml` (config,
+client partition, parameter counts, package versions, machine) and
+`metrics.jsonl` (one row per round). `pqc-pure` is a pure-Python ML-KEM and
+ML-DSA for trying things out; for anything else build liboqs 0.16 and
+install `q-edge[pqc]`.
 
 | Extra | Adds |
-|-------|------|
-| `server` | FastAPI server and Celery worker |
-| `fl` | PyTorch, Flower, scikit-learn and PyYAML for `qedge simulate` and the Flower apps |
-| `report` | matplotlib for `python -m experiments.report` |
-| `flower-sim` | Flower's Ray simulation engine, needed only for `flwr run` |
+|---|---|
+| `fl` | PyTorch, Flower, scikit-learn, PyYAML: simulator, hybrid models |
+| `server` | FastAPI server, Celery worker, `qedge clients` |
 | `pqc` | liboqs-python (needs the liboqs C library) |
-| `pqc-pure` | kyber-py and dilithium-py: pure Python, not constant-time, tests only |
-| `dev` | pytest, ruff, mypy, pre-commit |
+| `pqc-pure` | kyber-py and dilithium-py: not constant-time, tests only |
+| `report` | matplotlib for `python -m experiments.report` |
+| `flower-sim` | Ray, for `flwr run` |
+| `postgres` | psycopg, for the compose stack |
+| `dev` | pytest, hypothesis, ruff, mypy, pre-commit |
 
-### Reproducing the results
-
-```bash
-pip install -e ".[fl,report,pqc]"   # pqc (liboqs) for the benchmarks as configured
-make reproduce
-```
-
-`make reproduce` runs every script in `experiments/` and `bench/` with the
-grids in `experiments/configs/`, writes `results/summary/*.json`, and then
-`python -m experiments.report` turns them into
-[`docs/results.md`](docs/results.md) and `docs/figures/`. It took about 62
-minutes on a laptop CPU, 55 of them for the ZNE runs of the RQ1 experiment;
-`python -m experiments.run_all --skip quantum_head` takes about 7 minutes.
-
-### Development
-
-```bash
-# CPU-only PyTorch first keeps the install small; skip it to get the default build.
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[dev,server,pqc-pure,fl]"
-pre-commit install
-
-ruff check .
-ruff format --check .
-mypy src/qedge
-pytest -m "not slow"   # the suite CI runs on every push
-pytest -m slow         # long-running tests, run weekly in CI
-```
-
-### Federated simulation
-
-```bash
-qedge simulate --dataset breast_cancer --clients 10 --rounds 30 --alpha 0.5 --strategy fedavg --seed 0
-```
-
-Each run writes `results/runs/<run_id>/config.yaml` (configuration, client
-partition sizes and label counts, package versions, machine) and
-`metrics.jsonl` (test accuracy and loss, mean train loss, bytes up and down
-per round). Clients are simulated in one process; data comes from
-scikit-learn's `breast_cancer` and `digits`, split across clients with a
-per-class Dirichlet(α) draw. The same client and server code also runs as
-Flower apps:
-
-```bash
-pip install -e ".[fl,flower-sim]"
-# ~/.flwr/config.toml: [superlink.local] address = ":local:", options.num-supernodes = 10
-flwr run experiments/flower
-```
-
-Final test accuracy after 30 rounds, 10 clients, mean ± std over seeds 0-2
-([`results/summary/fl_baseline.json`](results/summary/fl_baseline.json),
-`python -m experiments.fl_baseline`, about 30 s on a laptop CPU):
-
-| breast_cancer, logreg | α = 0.1 | α = 0.5 | α = 100 |
-|---|---|---|---|
-| FedAvg | 0.971 ± 0.005 | 0.977 ± 0.010 | 0.974 ± 0.009 |
-| FedProx (μ = 0.01) | 0.971 ± 0.005 | 0.977 ± 0.010 | 0.974 ± 0.009 |
-| FedAdam | 0.980 ± 0.013 | 0.980 ± 0.005 | 0.977 ± 0.010 |
-| FedYogi | 0.980 ± 0.013 | 0.980 ± 0.005 | 0.977 ± 0.010 |
-
-| digits, MLP (16 hidden) | α = 0.1 | α = 0.5 | α = 100 |
-|---|---|---|---|
-| FedAvg | 0.939 ± 0.010 | 0.952 ± 0.003 | 0.955 ± 0.004 |
-| FedProx (μ = 0.01) | 0.940 ± 0.009 | 0.952 ± 0.003 | 0.955 ± 0.004 |
-| FedAdam | 0.949 ± 0.013 | 0.955 ± 0.007 | 0.959 ± 0.009 |
-| FedYogi | 0.950 ± 0.013 | 0.956 ± 0.010 | 0.959 ± 0.009 |
-
-Both datasets are small and easy, so differences between strategies are
-within about one standard deviation. With one local epoch, μ = 0.01 barely
-changes FedProx from FedAvg.
-
-Top-k compression of update deltas with error feedback, FedAvg, α = 0.5
-([`results/summary/compression.json`](results/summary/compression.json)).
-A kept entry costs 8 bytes (index and value), so a keep ratio of 0.5 saves
-nothing:
-
-| Dataset | Keep ratio | Bytes up, 30 rounds | Final accuracy |
-|---|---|---|---|
-| breast_cancer | 1 (dense) | 74,400 | 0.977 ± 0.010 |
-| breast_cancer | 0.1 | 16,800 | 0.977 ± 0.005 |
-| breast_cancer | 0.01 | 4,800 | 0.968 ± 0.005 |
-| digits | 1 (dense) | 1,452,000 | 0.952 ± 0.003 |
-| digits | 0.1 | 290,400 | 0.956 ± 0.010 |
-| digits | 0.01 | 33,600 | 0.917 ± 0.012 |
-
-Earlier versions mixed 30% "quantum" values into every aggregate. Re-created
-in `experiments/ablation_quantum_weight_mixing.py` (5 clients, 15 rounds,
-breast_cancer), it lowers final accuracy from 0.974 ± 0.000 to 0.918 ± 0.013
-([`results/summary/ablation_quantum_weight_mixing.json`](results/summary/ablation_quantum_weight_mixing.json)),
-so it was removed.
-
-### Hybrid model, noise and error mitigation
-
-```bash
-qedge simulate --model hybrid-vqc --qubits 4 --layers 2 --noise 0.01 --zne richardson
-qedge simulate --model classical-head --qubits 4 --layers 2   # matched baseline
-```
-
-`config.yaml` records the head's parameter count and the noise factors that
-folding reached. With noise and ZNE every forward pass runs three folded
-circuits: the command above took 261 s for 10 clients and 30 rounds on a
-laptop CPU (0.965 final accuracy), against about 5 s noiseless.
-
-ZNE on 20 random 4-qubit circuits (2 layers, ⟨Z0 Z1⟩, scale factors 1, 3, 5),
-mean absolute error from the noiseless value
-([`results/summary/zne.json`](results/summary/zne.json),
-`python -m experiments.zne_accuracy`). With three factors Richardson and a
-quadratic fit coincide:
-
-| Noise | p | Unmitigated | Richardson | Exponential |
-|---|---|---|---|---|
-| depolarizing | 0.001 | 0.0060 | 0.0002 | 0.0002 |
-| depolarizing | 0.01 | 0.0552 | 0.0051 | 0.0026 |
-| amplitude damping | 0.001 | 0.0046 | 0.0004 | 0.0015 |
-| amplitude damping | 0.01 | 0.0431 | 0.0050 | 0.0056 |
-
-Diagnostics ([`results/summary/quantum_diagnostics.json`](results/summary/quantum_diagnostics.json)):
-the variance of a gradient component with 8 strongly entangling layers falls
-from 0.14 (2 qubits) to 0.0022 (8 qubits), about 4x per two
-qubits, the barren-plateau scaling of McClean et al. (2018). Off-diagonal
-`zz` kernel values on breast_cancer features drop to a mean of
-0.005 at 8 qubits (variance 1.5e-04), so that kernel
-is close to the identity; the `angle` map keeps a mean of 0.16.
-
-### Malicious clients and robust aggregation
-
-```bash
-qedge simulate --dataset digits --model mlp --attack scaling --attack-fraction 0.3 --defense multi_krum
-```
-
-Attacks (`qedge.fl.attacks`): `label_flip`; `scaling` (flipped labels,
-update multiplied by the client count, i.e. model replacement);
-`random_noise` (N(0, 1) per coordinate); `fake_samples` (flipped labels and
-100x the real sample count). Defenses (`qedge.fl.robust`) replace FedAvg:
-coordinate-wise median, trimmed mean (β = 0.2), Krum and Multi-Krum
-(f = 3), clipping to the median update norm, and capping sample counts at
-3x the median claim. The server uses the same rules through
-`QEDGE_AGGREGATION` (all except `norm_clip`).
-
-Digits, MLP, 10 clients, α = 0.5, 30 rounds, final accuracy, mean ± std
-over seeds 0-2 ([`results/summary/robustness.json`](results/summary/robustness.json),
-`python -m experiments.robustness`, about 3 minutes; breast_cancer and the
-10% and 20% rows are in the file):
-
-| Attack (30% of clients) | FedAvg | Median | Trimmed mean | Krum | Multi-Krum | Norm clip | Bounded |
-|---|---|---|---|---|---|---|---|
-| none | 0.95 ± 0.00 | 0.93 ± 0.01 | 0.94 ± 0.01 | 0.68 ± 0.07 | 0.92 ± 0.00 | 0.95 ± 0.01 | 0.95 ± 0.00 |
-| label_flip | 0.70 ± 0.31 | 0.88 ± 0.03 | 0.89 ± 0.03 | 0.70 ± 0.08 | 0.94 ± 0.01 | 0.85 ± 0.14 | 0.70 ± 0.31 |
-| scaling | 0.18 ± 0.09 | 0.91 ± 0.02 | 0.60 ± 0.12 | 0.75 ± 0.11 | 0.94 ± 0.02 | 0.85 ± 0.14 | 0.18 ± 0.09 |
-| random_noise | 0.58 ± 0.06 | 0.93 ± 0.01 | 0.89 ± 0.02 | 0.75 ± 0.11 | 0.94 ± 0.02 | 0.92 ± 0.03 | 0.58 ± 0.06 |
-| fake_samples | 0.03 ± 0.02 | 0.88 ± 0.03 | 0.89 ± 0.03 | 0.70 ± 0.08 | 0.94 ± 0.01 | 0.03 ± 0.02 | 0.29 ± 0.16 |
-
-FedAvg is broken by every attack. Multi-Krum is the only rule that stays
-within 0.03 of its clean accuracy in every row, but even with no attack it
-costs 0.03. Krum, which keeps one client's model, loses 0.28 on non-IID data.
-Trimmed mean with β = 0.2 fails once 30% scale their updates. Norm clipping
-does nothing against inflated sample counts, and the sample cap does nothing
-against anything else. All defaults assume the attacker fraction is known to
-be at most 30%.
-
-### Secure aggregation
-
-```bash
-qedge simulate --secure-aggregation --secagg-backend liboqs
-```
-
-Pairwise masking after Bonawitz et al. (CCS 2017): each pair of clients
-derives a mask from an X25519 + ML-KEM-768 shared secret, one adds it and
-the other subtracts it, so the server learns only the weighted sum. All
-messages are signed with ML-DSA-65. Weights are fixed-point integers modulo
-2^64 (step 2^-20). There is no dropout recovery: a missing client fails the
-round ([ADR 0010](docs/decisions/0010-secure-aggregation-without-dropouts.md)).
-Secure aggregation and the robust rules exclude each other, because the
-rules need the individual updates. On breast_cancer the masked run ends at
-the same accuracy and test loss (to 1e-6) as plain FedAvg.
-
-Cost of one round with liboqs on a laptop CPU, in-process, no network
-(median of 3, [`results/summary/secagg.json`](results/summary/secagg.json),
-`python bench/secagg.py`):
-
-| Clients | Parameters | Up per client, KiB | Plain float32, KiB | Down per client, KiB | Client ms | Server ms |
-|---|---|---|---|---|---|---|
-| 5 | 1,210 | 25.8 | 4.7 | 26.3 | 1.4 | 1.2 |
-| 5 | 100,000 | 797.6 | 390.6 | 26.3 | 3.5 | 3.2 |
-| 10 | 1,210 | 36.6 | 4.7 | 59.2 | 2.6 | 3.8 |
-| 10 | 100,000 | 808.4 | 390.6 | 59.2 | 6.7 | 7.7 |
-| 20 | 1,210 | 58.2 | 4.7 | 125.0 | 5.1 | 13.2 |
-| 20 | 100,000 | 830.0 | 390.6 | 125.0 | 13.2 | 20.9 |
-| 50 | 1,210 | 123.1 | 4.7 | 322.5 | 12.7 | 75.9 |
-| 50 | 100,000 | 894.9 | 390.6 | 322.5 | 32.6 | 94.9 |
-
-The upload doubles because ring elements take 8 bytes, and the per-client
-key exchange grows linearly with the number of clients.
-
-### Running the server
+### Server
 
 ```bash
 pip install -e ".[server,pqc-pure]"
@@ -338,24 +120,13 @@ JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))") \
   QEDGE_CRYPTO_BACKEND=pure QEDGE_KEY_DIR=./keys qedge-api
 ```
 
-The `pure` backend logs a warning: it is not constant-time and is meant for
-tests; build liboqs and use `--backend liboqs` otherwise. A round then goes:
-
-1. The admin enrolls each client's public key (`qedge clients add` or
-   `POST /admin/clients`) and opens a round with a model spec
-   (`POST /admin/rounds`).
-2. A client logs in by signing a single-use nonce (`/auth/challenge`,
-   `/auth/token`), opens an encrypted session (`/transport/handshake`) and
-   sends one sealed update (`/rounds/{id}/updates`).
-3. The server aggregates (sample-weighted FedAvg) once `min_clients` updates
-   arrived or the deadline passed, and serves the model at
-   `/rounds/{id}/model`. `/rounds/{id}/events` streams state changes (SSE) and
-   `/metrics` exposes Prometheus counters.
-
-`qedge.fl.remote.RemoteClient` implements the client side. What this protects
-and what it does not is in [`docs/threat-model.md`](docs/threat-model.md).
-
-### Docker
+The admin enrolls clients and opens rounds (`POST /admin/rounds`). A client
+(`qedge.fl.remote.RemoteClient`) logs in by signing a nonce, opens an
+encrypted session and sends one sealed update per round. The server
+aggregates when `min_clients` updates arrive or the deadline passes, using
+`QEDGE_AGGREGATION` (`fedavg`, `median`, `trimmed_mean`, `krum`,
+`multi_krum` or `bounded`). Without keys or a crypto backend it refuses to
+start. With Docker:
 
 ```bash
 cp .env.example .env   # set JWT_SECRET_KEY, REDIS_PASSWORD, POSTGRES_PASSWORD
@@ -366,181 +137,168 @@ docker compose run --rm -v "$PWD/admin:/admin:ro" api \
 docker compose up --build
 ```
 
-Compose starts the API (published on `127.0.0.1:8000`), one Celery worker,
-Redis and Postgres. The image builds liboqs 0.16.0; the API refuses to start
-until server keys exist. Design decisions are recorded in
-[`docs/decisions/`](docs/decisions/).
+The dashboard: `cd mobile_app && flutter run -d chrome --web-port 3000
+--dart-define=QEDGE_API_URL=http://localhost:8000`
+([`mobile_app/README.md`](mobile_app/README.md)).
 
-### Flutter dashboard
+## Results
+
+Simulated clients on a laptop CPU; mean ± std over seeds 0-2. Full tables,
+figures and configs: [`docs/results.md`](docs/results.md),
+`experiments/configs/`.
+
+**RQ1: VQC head vs classical head.** 5 clients, 15 rounds, 4 qubits, 2
+strongly entangling layers (24 parameters) against a tanh head with 20.
+Encoder and readout are identical.
+
+| Dataset, α | Classical head | VQC | VQC, p = 0.01 | VQC, p = 0.01, ZNE |
+|---|---|---|---|---|
+| breast_cancer, 0.1 | 0.968 ± 0.018 | 0.965 ± 0.032 | 0.930 ± 0.092 | 0.965 ± 0.032 |
+| breast_cancer, 1.0 | 0.974 ± 0.018 | 0.977 ± 0.018 | 0.974 ± 0.018 | 0.977 ± 0.018 |
+| digits, 0.1 | 0.643 ± 0.125 | 0.486 ± 0.093 | 0.496 ± 0.086 | 0.491 ± 0.084 |
+| digits, 1.0 | 0.685 ± 0.143 | 0.514 ± 0.061 | 0.485 ± 0.100 | 0.512 ± 0.058 |
+
+The VQC head matches the classical head on breast_cancer and is about 0.16
+worse on digits. Depolarizing noise at p = 0.01 and ZNE change final
+accuracy by less than the seed-to-seed spread; the largest effect is on
+breast_cancer at α = 0.1 (0.965 noiseless, 0.930 with noise, 0.965 with
+ZNE). ZNE makes training about 8x slower. On random 4-qubit circuits ZNE cuts the expectation-value error at
+p = 0.01 from 0.055 to 0.005 (Richardson) or 0.003 (exponential).
+
+**RQ2: cost of post-quantum protection** (liboqs 0.16):
+
+- The transport handshake takes 0.57 ms and 7 840 bytes once per
+  session, plus 52 bytes per update frame.
+- Secure aggregation per round, per client, against a plain float32
+  upload:
+  - 10 clients, 1 210 parameters: 36.6 KiB up instead of 4.7 KiB, 2.6 ms;
+    server 3.8 ms.
+  - 50 clients, 100 000 parameters: 895 KiB instead of 391 KiB, 33 ms;
+    server 95 ms.
+- The upload doubles because masked values take 8 bytes, and the key
+  exchange grows linearly with the number of clients.
+
+**RQ3: malicious clients** (digits, MLP, 10 clients, 30 rounds, 3 of 10
+attack):
+
+| Attack | FedAvg | Median | Multi-Krum |
+|---|---|---|---|
+| none | 0.952 ± 0.003 | 0.931 ± 0.006 | 0.922 ± 0.003 |
+| label flip | 0.700 ± 0.314 | 0.883 ± 0.032 | 0.938 ± 0.013 |
+| scaling (model replacement) | 0.177 ± 0.094 | 0.908 ± 0.015 | 0.936 ± 0.022 |
+| random noise | 0.578 ± 0.065 | 0.933 ± 0.014 | 0.936 ± 0.022 |
+| fake sample counts | 0.030 ± 0.018 | 0.883 ± 0.032 | 0.938 ± 0.013 |
+
+FedAvg fails against every attack. Multi-Krum holds within 0.02 of its own
+clean accuracy but costs 0.03 without attackers; Krum alone costs 0.28 on
+non-IID data. None of these rules can run under secure aggregation, which
+hides the individual updates they inspect (ADR 0010). Trimmed mean, norm
+clipping and sample caps are in `docs/results.md`.
+
+## Security model
+
+Protected: reading or forging updates on the wire, now or after a quantum
+break of X25519 (hybrid KEM, signed handshake, AEAD frames, replay
+counters); impersonating the server or an enrolled client; malformed or
+duplicated updates; clients triggering aggregation. Partly protected:
+malicious clients within the protocol, through robust rules. Not
+protected: a curious server outside the simulator (secure aggregation is
+not exposed over HTTP), inference from the global model (no privacy
+accountant), denial of service, side channels of the pure backend, and
+stolen tokens before expiry. See [`docs/threat-model.md`](docs/threat-model.md).
+
+## Limitations
+
+- Two small, easy datasets. Differences below about one standard
+  deviation (up to 0.14 on digits in RQ1) are not resolved with 3 seeds.
+- RQ1 uses 5 clients and 15 rounds to keep ZNE runs affordable, so digits
+  accuracies (0.5-0.7) are far below a 30-round MLP (0.95).
+- Simulated noise is one channel per gate and wire: no crosstalk, idle
+  noise or coherent errors. Backpropagation through `default.mixed` gives
+  gradients that hardware cannot (ADR 0009).
+- Secure aggregation has no dropout recovery and runs in-process only. The
+  measured costs exclude network latency.
+- Clipping and Gaussian noise exist, but no ε is reported, because there is
+  no privacy accountant.
+- Robust rules assume at most 30% attackers and are not tested against
+  targeted backdoors or adaptive attackers.
+- The Flutter app is read-only and does no cryptography; Android and iOS
+  builds are untested.
+
+## Development
 
 ```bash
-cd mobile_app
-flutter pub get
-flutter run -d chrome --web-port 3000 --dart-define=QEDGE_API_URL=http://localhost:8000
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[dev,server,pqc-pure,fl,report]"
+pre-commit install
+make lint             # ruff check, ruff format --check, mypy --strict on src/qedge
+make test             # pytest -m "not slow"
+pytest -m slow        # Flower end-to-end and a noisy ZNE run (needs flower-sim)
+make reproduce        # every experiment and docs/results.md, about 62 minutes
 ```
 
-A read-only view of server health, key fingerprints and rounds (live via
-server-sent events). It performs no cryptography and no training; see
-[`mobile_app/README.md`](mobile_app/README.md).
+`python -m experiments.run_all --skip quantum_head` reruns everything but
+the ZNE grid in about 7 minutes. CI runs lint and tests on Python 3.11-3.13,
+a liboqs job, the Flutter tests and Docker builds.
 
----
-
-## Project Structure
+## Layout
 
 ```
-Q-Edge/
-├── src/qedge/
-│   ├── quantum/
-│   │   ├── circuits.py       # Angle embedding and variational layers
-│   │   ├── diagnostics.py    # Gradient variance, kernel concentration, expressibility
-│   │   ├── kernels.py        # Fidelity kernels with qml.adjoint
-│   │   ├── models.py         # Hybrid VQC and matched classical head (PyTorch)
-│   │   ├── noise.py          # Depolarizing, amplitude damping and readout noise
-│   │   └── zne.py            # ZNE via fold_global, tensored readout mitigation
-│   ├── fl/
-│   │   ├── attacks.py        # Simulated malicious clients
-│   │   ├── compression.py    # Top-k with error feedback
-│   │   ├── flower_app.py     # Flower ClientApp and ServerApp
-│   │   ├── models.py         # Logistic regression and MLP (PyTorch)
-│   │   ├── partition.py      # Datasets and Dirichlet split
-│   │   ├── privacy.py        # Update clipping and Gaussian noise (no epsilon)
-│   │   ├── remote.py         # Client for the Q-Edge server API
-│   │   ├── robust.py         # Median, trimmed mean, Krum, clipping, sample cap
-│   │   ├── secagg.py         # Pairwise-masked secure aggregation
-│   │   ├── simulation.py     # In-process simulation (`qedge simulate`)
-│   │   ├── strategies.py     # FedAvg, FedAdam, FedYogi
-│   │   ├── training.py       # Local SGD with the FedProx term
-│   │   └── weights.py        # Weight wire format
-│   ├── crypto/
-│   │   ├── backends/         # liboqs and pure-Python ML-KEM / ML-DSA
-│   │   ├── hybrid.py         # X25519 + ML-KEM-768 KEM
-│   │   ├── keys.py           # Server key files (`qedge keys init`)
-│   │   └── transport.py      # Signed handshake, ChaCha20-Poly1305 frames
-│   └── server/
-│       ├── app.py            # FastAPI app factory and endpoints
-│       ├── auth.py           # Enrollment, challenge-response login, tokens
-│       ├── channels.py       # Encrypted session store
-│       ├── db.py             # SQLAlchemy models, Alembic migrations, blobs
-│       ├── metrics.py        # Prometheus metrics
-│       ├── rounds.py         # Round state machine and aggregation
-│       ├── settings.py       # Environment settings (pydantic-settings)
-│       └── worker.py         # Celery task for bounded circuit runs
-├── tests/                    # Unit and integration tests
-├── bench/                    # crypto.py and secagg.py benchmarks -> results/summary/
-├── experiments/              # FL baseline, compression and ablation scripts; Flower app config
-├── results/summary/          # Committed JSON summaries (results/runs/ is ignored)
-├── docs/threat-model.md       # Assets, adversaries, what is not protected
-├── docs/decisions/           # Architecture decision records
-├── mobile_app/               # Flutter dashboard (read-only, REST and SSE)
-├── Dockerfile                # Targets: api, worker
-└── docker-compose.yml        # API, worker, Redis
+src/qedge/
+  crypto/     ML-KEM, ML-DSA, hybrid KEM, transport, key files, backends
+  fl/         datasets, models, training, strategies, robust rules, attacks,
+              compression, privacy, secure aggregation, simulator, Flower apps
+  quantum/    circuits, noise, ZNE and readout mitigation, kernels, models,
+              diagnostics
+  server/     FastAPI app, auth, rounds, storage, metrics, Celery worker
+  cli.py      qedge keys | clients | simulate | demo
+  demo.py
+experiments/  configs/*.yaml, one script per experiment, run_all.py, report.py
+bench/        crypto.py, secagg.py
+results/      summary/*.json (committed), runs/ (ignored)
+docs/         architecture.md, threat-model.md, results.md, figures/, decisions/
+mobile_app/   Flutter dashboard
 ```
 
----
+## References
 
-## How It Works
-
-### 1. Federated Learning Flow
-
-```
-Mobile Device A ─┐
-                 │    Encrypted
-Mobile Device B ─┼──────────────▶ Q-Edge Server ──▶ FedAvg
-                 │    Weights
-Mobile Device C ─┘
-```
-
-### 2. Hybrid model
-
-```
-features -> Linear -> ReLU -> Linear -> pi*tanh -> AngleEmbedding (RY)
-         -> StronglyEntanglingLayers (or RY/RZ + CNOT ring) -> <Z_i> -> Linear -> logits
-```
-
-`hybrid-vqc` runs the circuit through `qml.qnn.TorchLayer`;
-`classical-head` swaps it for a tanh layer or MLP that is never narrower
-than the qubit count, with about as many parameters (4 qubits, 2 layers:
-24 vs 20). Noise is attached to the device
-(`default.mixed`), so it also acts on folded gates. Without shots, gradients
-come from backpropagation through the simulator; with `--shots` from the
-parameter-shift rule ([ADR 0009](docs/decisions/0009-noise-and-zne-in-training.md)).
-
-### 3. Post-Quantum Security
-
-| Primitive | Purpose | NIST category |
-|-----------|---------|---------------|
-| **X25519 + ML-KEM-768** (default), ML-KEM-768, ML-KEM-1024 | Key encapsulation | 3, 3, 5 |
-| **ML-DSA-65** (default), ML-DSA-87 | Client and server signatures | 3, 5 |
-| **ChaCha20-Poly1305** | Frame encryption, header as associated data | n/a |
-
-There is no simulated fallback: a missing backend or missing key file stops the
-server ([ADR 0004](docs/decisions/0004-explicit-crypto-backend.md)). Key and
-ciphertext sizes, timings per backend and the handshake cost are in
-[`results/summary/crypto.json`](results/summary/crypto.json), produced by
-`python bench/crypto.py`. Client updates reach the server only inside this channel.
-
----
-
-## Tech Stack
-
-<div align="center">
-
-| Category | Technologies |
-|----------|-------------|
-| **Quantum** | PennyLane, NumPy, SciPy |
-| **Backend** | FastAPI, Celery, Redis |
-| **Mobile** | Flutter, Dart |
-| **Security** | cryptography, python-jose |
-| **DevOps** | Docker, GitHub Actions |
-
-</div>
-
----
-
-## Roadmap
-
-- [x] Variational Quantum Circuits
-- [x] Quantum Kernel Alignment
-- [x] Zero-Noise Extrapolation
-- [x] Federated Learning Simulation
-- [x] Flutter Mobile App
-- [x] FastAPI Backend
-- [x] ML-KEM / ML-DSA through liboqs
-- [ ] Real Dataset Training
-- [ ] Mobile Device Testing
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
+- McMahan et al., "Communication-Efficient Learning of Deep Networks from
+  Decentralized Data", 2017, arXiv:1602.05629 (FedAvg).
+- Li et al., "Federated Optimization in Heterogeneous Networks", 2018,
+  arXiv:1812.06127 (FedProx).
+- Reddi et al., "Adaptive Federated Optimization", 2020, arXiv:2003.00295
+  (FedAdam, FedYogi).
+- Karimireddy et al., "Error Feedback Fixes SignSGD and other Gradient
+  Compression Schemes", 2019, arXiv:1901.09847.
+- Yin et al., "Byzantine-Robust Distributed Learning: Towards Optimal
+  Statistical Rates", 2018, arXiv:1803.01498 (median, trimmed mean).
+- Blanchard et al., "Machine Learning with Adversaries: Byzantine Tolerant
+  Gradient Descent", NeurIPS 2017 (Krum).
+- Sun et al., "Can You Really Backdoor Federated Learning?", 2019,
+  arXiv:1911.07963 (norm clipping).
+- Bagdasaryan et al., "How To Backdoor Federated Learning", 2018,
+  arXiv:1807.00459 (model replacement).
+- Bonawitz et al., "Practical Secure Aggregation for Privacy-Preserving
+  Machine Learning", CCS 2017.
+- Schuld et al., "Circuit-centric quantum classifiers", 2018,
+  arXiv:1804.00633.
+- Pérez-Salinas et al., "Data re-uploading for a universal quantum
+  classifier", 2020, arXiv:1907.02085.
+- Havlíček et al., "Supervised learning with quantum-enhanced feature
+  spaces", Nature 2019.
+- Temme et al., "Error mitigation for short-depth quantum circuits", 2017,
+  arXiv:1612.02058.
+- Giurgica-Tiron et al., "Digital zero noise extrapolation for quantum
+  error mitigation", 2020, arXiv:2005.10921.
+- McClean et al., "Barren plateaus in quantum neural network training
+  landscapes", 2018, arXiv:1803.11173.
+- Thanasilp et al., "Exponential concentration in quantum kernel methods",
+  2022, arXiv:2208.11060.
+- Sim et al., "Expressibility and entangling capability of parameterized
+  quantum circuits", 2019, arXiv:1905.10876.
+- NIST FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA), 2024.
 
 ## License
 
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Acknowledgments
-
-- [PennyLane](https://pennylane.ai) - Quantum ML framework
-- [Flower](https://flower.dev) - Federated Learning framework
-- [NIST PQC](https://csrc.nist.gov/projects/post-quantum-cryptography) - PQC standards
-
----
-
-<div align="center">
-
-**Star this repo if you find it interesting!**
-
-Made for the Quantum Computing Community
-
-</div>
+Apache 2.0, see [LICENSE](LICENSE). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
