@@ -2,7 +2,7 @@
 
 All rules implement `qedge.fl.strategies.Aggregator`. They need each
 client's update in the clear, so they cannot run on top of secure
-aggregation, which reveals only the sum of the updates.
+aggregation (`qedge.fl.secagg`), which reveals only the sum of the updates.
 
 - ``median``: coordinate-wise median of the client weights.
 - ``trimmed_mean``: coordinate-wise mean after dropping the ``beta``
