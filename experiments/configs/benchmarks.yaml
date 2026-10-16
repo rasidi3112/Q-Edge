@@ -1,0 +1,3 @@
+# Benchmarks outside the FL simulator. The backend must be installed.
+crypto: {output: results/summary/crypto.json}
+secagg: {output: results/summary/secagg.json, backend: liboqs, clients: [5, 10, 20, 50], repeats: 3}

@@ -45,7 +45,7 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev,server,pqc-pure,fl]"
+      - run: pip install -e ".[dev,server,pqc-pure,fl,report]"
       - run: pytest -m "not slow" --cov=qedge --cov-report=term-missing
       - run: qedge simulate --clients 10 --rounds 30 --out "$RUNNER_TEMP/runs"
 

@@ -20,5 +20,5 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev,server,pqc-pure,fl,flower-sim]"
+      - run: pip install -e ".[dev,server,pqc-pure,fl,flower-sim,report]"
       - run: pytest -m slow

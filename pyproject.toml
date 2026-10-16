@@ -63,6 +63,10 @@ fl = [
     "scikit-learn>=1.9",
     "torch>=2.14",
 ]
+# Figures for docs/results.md (experiments/report.py).
+report = [
+    "matplotlib>=3.10",
+]
 # Ray backend for `flwr run`; the in-process simulator does not need it.
 flower-sim = [
     "flwr[simulation]>=1.40",
@@ -138,6 +142,8 @@ known-first-party = ["experiments", "qedge"]
 "tests/**" = ["D"]
 # demo.py predates these rules and prints emoji; it is replaced by a CLI demo later.
 "demo.py" = ["D", "RUF001"]
+# The report writes Greek letters (alpha, beta) into Markdown tables on purpose.
+"experiments/report.py" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -159,6 +165,8 @@ disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The experiments package lives at the repository root.
+pythonpath = ["."]
 addopts = "-ra --strict-markers --strict-config"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

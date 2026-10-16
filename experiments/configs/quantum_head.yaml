@@ -1,0 +1,14 @@
+# RQ1: VQC head vs a classical head of matched size, with and without
+# noise and ZNE. 5 clients and 15 rounds keep the ZNE runs affordable.
+output: results/summary/quantum_head.json
+datasets: [breast_cancer, digits]
+alphas: [0.1, 1.0]
+seeds: [0, 1, 2]
+clients: 5
+rounds: 15
+head: {n_qubits: 4, n_layers: 2, encoder_hidden: 8}
+conditions:
+  - {name: classical-head, model: classical-head}
+  - {name: vqc, model: hybrid-vqc}
+  - {name: vqc-noise-0.01, model: hybrid-vqc, noise: 0.01}
+  - {name: vqc-noise-0.01-zne, model: hybrid-vqc, noise: 0.01, zne: richardson}
