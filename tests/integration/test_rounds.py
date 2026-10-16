@@ -64,8 +64,9 @@ def test_round_closes_at_min_clients_and_serves_the_fedavg_model(server, admin, 
 
 
 def test_deadline_aggregates_whatever_arrived(server, admin, make_client):
-    round_id = open_round(server, admin, min_clients=3, deadline_seconds=0.3)
+    # Log in first: the pure-Python handshake can take longer than the deadline.
     a = make_client("hospital_A")
+    round_id = open_round(server, admin, min_clients=3, deadline_seconds=1.0)
     a.submit(round_id, w(4.0, 2.0), n_samples=5, local_loss=0.1)
 
     with server.stream("GET", f"/rounds/{round_id}/events", headers=admin) as response:
