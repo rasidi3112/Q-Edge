@@ -1,4 +1,8 @@
-"""Command-line entry point: ``qedge keys`` and ``qedge clients``."""
+"""Command-line entry point: ``qedge keys``, ``qedge clients`` and ``qedge simulate``.
+
+Server and FL modules are imported inside their commands so that each
+command needs only its own extra (``server`` or ``fl``).
+"""
 
 from __future__ import annotations
 
@@ -21,8 +25,11 @@ from qedge.crypto.keys import (
     load_server_keys,
 )
 from qedge.crypto.sign import SIGNATURE_ALGORITHMS
-from qedge.server.auth import SCOPES, ClientConflictError, enroll_client
-from qedge.server.db import Database, default_database_url
+from qedge.protocol import SCOPES
+
+FL_DATASETS = ("breast_cancer", "digits")
+FL_MODELS = ("logreg", "mlp")
+FL_STRATEGIES = ("fedavg", "fedprox", "fedadam", "fedyogi")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -59,9 +66,27 @@ def _parser() -> argparse.ArgumentParser:
     add.add_argument("--signature", choices=SIGNATURE_ALGORITHMS, default=DEFAULT_SIGNATURE)
     add.add_argument(
         "--database-url",
-        default=os.environ.get("QEDGE_DATABASE_URL")
-        or default_database_url(Path(os.environ.get("QEDGE_DATA_DIR", "qedge-data"))),
+        default=os.environ.get("QEDGE_DATABASE_URL"),
+        help="defaults to qedge.db in $QEDGE_DATA_DIR (qedge-data)",
     )
+
+    sim = commands.add_parser("simulate", help="run an in-process FL simulation")
+    sim.add_argument("--dataset", choices=FL_DATASETS, default="breast_cancer")
+    sim.add_argument("--model", choices=FL_MODELS, default="logreg")
+    sim.add_argument("--clients", type=int, default=10)
+    sim.add_argument("--rounds", type=int, default=30)
+    sim.add_argument("--alpha", type=float, default=0.5, help="Dirichlet concentration")
+    sim.add_argument("--strategy", choices=FL_STRATEGIES, default="fedavg")
+    sim.add_argument("--seed", type=int, default=0)
+    sim.add_argument("--local-epochs", type=int, default=1)
+    sim.add_argument("--batch-size", type=int, default=16)
+    sim.add_argument("--lr", type=float, default=0.1, help="client SGD learning rate")
+    sim.add_argument("--mu", type=float, default=0.0, help="FedProx mu (0: 0.01 for fedprox)")
+    sim.add_argument("--server-lr", type=float, default=0.05, help="FedAdam/FedYogi step")
+    sim.add_argument("--compression", type=float, help="top-k ratio for update deltas")
+    sim.add_argument("--dp-clip", type=float, help="L2 clip for update deltas")
+    sim.add_argument("--dp-noise", type=float, default=0.0, help="Gaussian noise multiplier")
+    sim.add_argument("--out", type=Path, default=Path("results/runs"), help="parent directory")
     return parser
 
 
@@ -82,6 +107,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "clients":
         return _clients(args)
+    if args.command == "simulate":
+        return _simulate(args)
     try:
         if args.action == "init":
             keys = generate_server_keys(
@@ -100,6 +127,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _clients(args: argparse.Namespace) -> int:
+    from qedge.server.auth import ClientConflictError, enroll_client
+    from qedge.server.db import Database, default_database_url
+
+    if getattr(args, "database_url", "") is None:
+        data_dir = Path(os.environ.get("QEDGE_DATA_DIR", "qedge-data"))
+        args.database_url = default_database_url(data_dir)
     try:
         signer = get_signer(args.signature, args.backend)
         if args.action == "keygen":
@@ -130,6 +163,44 @@ def _clients(args: argparse.Namespace) -> int:
         return 1
     verb = "enrolled" if created else "already enrolled"
     print(f"{verb} {args.client_id} ({args.scope}), key {fingerprint(public_key)}")
+    return 0
+
+
+def _simulate(args: argparse.Namespace) -> int:
+    from qedge.fl.simulation import SimulationConfig, run_simulation
+
+    try:
+        config = SimulationConfig(
+            dataset=args.dataset,
+            model=args.model,
+            clients=args.clients,
+            rounds=args.rounds,
+            alpha=args.alpha,
+            strategy=args.strategy,
+            seed=args.seed,
+            local_epochs=args.local_epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            mu=args.mu,
+            server_lr=args.server_lr,
+            compression=args.compression,
+            dp_clip=args.dp_clip,
+            dp_noise=args.dp_noise,
+        )
+        summary = run_simulation(config, args.out)
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    rows = [
+        ("run directory", summary["run_dir"]),
+        ("parameters", summary["parameters"]),
+        ("final accuracy", f"{summary['final_accuracy']:.4f}"),
+        ("best accuracy", f"{summary['best_accuracy']:.4f}"),
+        ("bytes up", summary["bytes_up"]),
+        ("bytes down", summary["bytes_down"]),
+        ("seconds", f"{summary['seconds']:.2f}"),
+    ]
+    print("\n".join(f"{label + ':':16}{value}" for label, value in rows))
     return 0
 
 

@@ -1,0 +1,29 @@
+# Flower app definition for `flwr run experiments/flower`. The apps live in
+# qedge.fl.flower_app. Dependencies stay empty: Flower would otherwise try to
+# resolve q-edge from PyPI for its per-run environment. Install
+# q-edge[fl,flower-sim] in the environment that runs `flwr`.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "qedge-flower"
+version = "0.2.0"
+description = "Q-Edge federated simulation as a Flower app"
+dependencies = []
+
+[tool.flwr.app]
+publisher = "rasidi3112"
+
+[tool.flwr.app.components]
+serverapp = "qedge.fl.flower_app:server_app"
+clientapp = "qedge.fl.flower_app:client_app"
+
+[tool.flwr.app.config]
+dataset = "breast_cancer"
+model = "logreg"
+clients = 10
+rounds = 30
+alpha = 0.5
+strategy = "fedavg"
+seed = 0

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from qedge.crypto.sign import Signer
 from qedge.crypto.transport import MAX_CLIENT_ID_BYTES
-from qedge.protocol import challenge_message
+from qedge.protocol import SCOPES, challenge_message
 from qedge.server.db import Challenge, Client
 
 if TYPE_CHECKING:
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ("client", "admin")
 NONCE_BYTES = 32
 CHALLENGE_TTL_SECONDS = 60
 

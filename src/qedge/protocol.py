@@ -7,6 +7,7 @@ from typing import Any
 from qedge.fl.weights import ModelSpec, TensorSpec
 
 CHALLENGE_LABEL = b"qedge/auth/v1"
+SCOPES = ("client", "admin")
 
 
 def challenge_message(nonce: bytes, client_id: str, server_id: str) -> bytes:

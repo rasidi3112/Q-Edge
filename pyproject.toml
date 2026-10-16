@@ -58,10 +58,14 @@ postgres = [
 ]
 # scikit-learn provides the datasets, PyYAML writes run configs.
 fl = [
-    "flwr>=1.32",
+    "flwr>=1.40",
     "pyyaml>=6",
     "scikit-learn>=1.9",
     "torch>=2.14",
+]
+# Ray backend for `flwr run`; the in-process simulator does not need it.
+flower-sim = [
+    "flwr[simulation]>=1.40",
 ]
 pqc = [
     "liboqs-python>=0.16",
