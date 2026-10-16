@@ -55,6 +55,9 @@ class SimulationConfig:
     `qedge.fl.attacks.ATTACKS`) is applied by ``attack_fraction`` of the
     clients. ``defense`` (one of `qedge.fl.robust.DEFENSES`) replaces FedAvg
     on the server and needs ``strategy`` fedavg or fedprox.
+    ``secure_aggregation`` replaces FedAvg by the masked sum of
+    `qedge.fl.secagg` with keys from ``secagg_backend``; it excludes a
+    defense, which needs individual updates.
     """
 
     dataset: str = "breast_cancer"
@@ -78,6 +81,8 @@ class SimulationConfig:
     attack_scale: float | None = None
     defense: str | None = None
     defense_options: dict[str, Any] = field(default_factory=dict)
+    secure_aggregation: bool = False
+    secagg_backend: str = "pure"
 
     def __post_init__(self) -> None:
         if self.strategy not in STRATEGIES:
@@ -97,6 +102,15 @@ class SimulationConfig:
             RobustAggregator(self.defense, **self.defense_options)
         elif self.defense_options:
             raise ValueError("defense_options need a defense")
+        if self.secure_aggregation:
+            if self.defense is not None:
+                raise ValueError(
+                    "secure aggregation hides individual updates, so a robust defense cannot run"
+                )
+            if self.strategy not in ("fedavg", "fedprox"):
+                raise ValueError(
+                    "secure aggregation computes FedAvg; use strategy fedavg or fedprox"
+                )
 
     def attack_config(self) -> Attack | None:
         """The attack of this run, or None."""
@@ -125,6 +139,7 @@ class SimulationConfig:
             f"-c{self.clients}-a{self.alpha:g}-s{self.seed}"
             + (f"-{self.attack}{self.attack_fraction:g}" if self.attack else "")
             + (f"-{self.defense}" if self.defense else "")
+            + ("-secagg" if self.secure_aggregation else "")
         )
 
 
@@ -134,6 +149,17 @@ ModelFactory = Callable[[SimulationConfig, Dataset], Any]
 def _default_model(config: SimulationConfig, data: Dataset) -> Any:
     return build_model(
         config.model, data.n_features, data.n_classes, seed=config.seed, **config.model_options
+    )
+
+
+def _secure_aggregator(config: SimulationConfig) -> Any:
+    from qedge.crypto.backends import get_kem, get_signer
+    from qedge.fl.secagg import SecureAggregator
+
+    return SecureAggregator(
+        [f"client{i:04d}" for i in range(config.clients)],
+        kem=get_kem("X25519-ML-KEM-768", config.secagg_backend),
+        signer=get_signer("ML-DSA-65", config.secagg_backend),
     )
 
 
@@ -187,6 +213,7 @@ def run_simulation(
     attack = config.attack_config()
     attackers = attack.attackers(config.clients, config.seed) if attack else frozenset()
     attack_rng = np.random.default_rng([config.seed, 11])
+    secure = _secure_aggregator(config) if config.secure_aggregation else None
     partition = [
         {
             "client": i,
@@ -241,7 +268,14 @@ def run_simulation(
                 claimed = attack.claimed_samples(claimed, config.clients)
             client_weights = {n: global_weights[n] + delta[n] for n in global_weights}
             updates.append((client_weights, claimed))
-        global_weights = strategy.step(global_weights, updates)
+        secagg_cost: dict[str, float] = {}
+        if secure is not None:
+            global_weights = secure.aggregate(
+                round_index, {f"client{i:04d}": update for i, update in enumerate(updates)}
+            )
+            secagg_cost = dataclasses.asdict(secure.last_cost)
+        else:
+            global_weights = strategy.step(global_weights, updates)
         set_weights(model, global_weights)
         accuracy, loss = evaluate(model, data.x_test, data.y_test)
         bytes_down = dense_bytes(global_weights) * len(shards)
@@ -255,6 +289,7 @@ def run_simulation(
             "bytes_up": bytes_up,
             "bytes_down": bytes_down,
             "seconds": time.perf_counter() - round_start,
+            **{f"secagg_{k}": v for k, v in secagg_cost.items()},
         }
         history.append(row)
         if run_dir is not None:

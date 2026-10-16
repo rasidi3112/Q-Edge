@@ -99,6 +99,10 @@ def _parser() -> argparse.ArgumentParser:
     sim.add_argument("--trim", type=float, dest="beta", help="trimmed_mean beta")
     sim.add_argument("--krum-f", type=int, dest="f", help="Byzantine clients Krum tolerates")
     sim.add_argument("--sample-cap", type=float, dest="cap", help="bounded: cap x median")
+    sim.add_argument(
+        "--secure-aggregation", action="store_true", help="pairwise-masked FedAvg (qedge.fl.secagg)"
+    )
+    sim.add_argument("--secagg-backend", choices=BACKENDS, default="pure")
     head = sim.add_argument_group("hybrid-vqc and classical-head options")
     head.add_argument("--qubits", type=int, dest="n_qubits")
     head.add_argument("--layers", type=int, dest="n_layers")
@@ -236,6 +240,8 @@ def _simulate(args: argparse.Namespace) -> int:
             attack_fraction=args.attack_fraction,
             attack_scale=args.attack_scale,
             defense=args.defense,
+            secure_aggregation=args.secure_aggregation,
+            secagg_backend=args.secagg_backend,
             defense_options={
                 k: getattr(args, k) for k in ("beta", "f", "cap") if getattr(args, k) is not None
             },

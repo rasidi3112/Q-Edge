@@ -124,3 +124,24 @@ def test_attackers_are_recorded(tmp_path):
 def test_invalid_attack_and_defense_configs_are_rejected(options, message):
     with pytest.raises(ValueError, match=message):
         SimulationConfig(**options)
+
+
+def test_secure_aggregation_matches_plain_fedavg():
+    plain = run_simulation(SimulationConfig(**{**SMALL, "rounds": 3}))
+    secure = run_simulation(SimulationConfig(**{**SMALL, "rounds": 3}, secure_aggregation=True))
+
+    for a, b in zip(plain["history"], secure["history"], strict=True):
+        assert b["test_loss"] == pytest.approx(a["test_loss"], abs=1e-4)
+        assert b["secagg_bytes_up_per_client"] > a["bytes_up"] / 5
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"defense": "median"}, "cannot run"),
+        ({"strategy": "fedadam"}, "computes FedAvg"),
+    ],
+)
+def test_secure_aggregation_excludes_robust_rules_and_adaptive_servers(options, message):
+    with pytest.raises(ValueError, match=message):
+        SimulationConfig(secure_aggregation=True, **options)
