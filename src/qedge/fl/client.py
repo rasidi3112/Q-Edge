@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,18 +14,8 @@ from numpy.typing import NDArray
 # Conditional imports for Flower
 try:
     import flwr as fl
-    from flwr.client import Client, NumPyClient
-    from flwr.common import (
-        Code,
-        FitRes,
-        GetParametersRes,
-        GetPropertiesRes,
-        Parameters,
-        Scalar,
-        Status,
-        ndarrays_to_parameters,
-        parameters_to_ndarrays,
-    )
+    from flwr.client import NumPyClient
+    from flwr.common import Scalar
 
     FLOWER_AVAILABLE = True
 except ImportError:
@@ -67,7 +57,7 @@ class SimpleMobileModel(nn.Module):
     def __init__(
         self,
         input_dim: int = 784,
-        hidden_dims: List[int] = [256, 128],
+        hidden_dims: Sequence[int] = (256, 128),
         output_dim: int = 10,
     ) -> None:
         super().__init__()
@@ -97,7 +87,7 @@ class MobileFlowerClient:
     def __init__(
         self,
         config: MobileDeviceConfig,
-        model: Optional[nn.Module] = None,
+        model: nn.Module | None = None,
     ) -> None:
         self.config = config
 
@@ -117,12 +107,12 @@ class MobileFlowerClient:
             self.pqc_transport = None
 
         # Training state
-        self._local_data: Optional[Tuple[NDArray, NDArray]] = None
-        self._optimizer: Optional[optim.Optimizer] = None
+        self._local_data: tuple[NDArray, NDArray] | None = None
+        self._optimizer: optim.Optimizer | None = None
         self._criterion = nn.CrossEntropyLoss() if TORCH_AVAILABLE else None
 
         # Metrics tracking
-        self.training_history: List[Dict[str, Any]] = []
+        self.training_history: list[dict[str, Any]] = []
         self._round_number = 0
 
         logger.info(f"Initialized MobileFlowerClient: {config.client_id}")
@@ -146,17 +136,17 @@ class MobileFlowerClient:
 
         logger.info(f"Set local data: {len(self._local_data[0])} train, {n_val} validation samples")
 
-    def get_parameters(self) -> List[NDArray]:
+    def get_parameters(self) -> list[NDArray]:
         if self.model is None:
             return []
 
         return [param.detach().cpu().numpy() for param in self.model.parameters()]
 
-    def set_parameters(self, parameters: List[NDArray]) -> None:
+    def set_parameters(self, parameters: list[NDArray]) -> None:
         if self.model is None:
             return
 
-        for param, new_value in zip(self.model.parameters(), parameters):
+        for param, new_value in zip(self.model.parameters(), parameters, strict=True):
             param.data = torch.tensor(
                 new_value,
                 dtype=param.dtype,
@@ -167,7 +157,7 @@ class MobileFlowerClient:
         self,
         X: NDArray,
         y: NDArray,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ) -> DataLoader:
         if not TORCH_AVAILABLE:
             raise RuntimeError("PyTorch required for training")
@@ -191,8 +181,8 @@ class MobileFlowerClient:
 
     def train_local(
         self,
-        epochs: Optional[int] = None,
-    ) -> Dict[str, float]:
+        epochs: int | None = None,
+    ) -> dict[str, float]:
         if self.model is None or self._local_data is None:
             return {"error": "Model or data not available"}
 
@@ -266,7 +256,7 @@ class MobileFlowerClient:
         self,
         X: NDArray,
         y: NDArray,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         if self.model is None:
             return {}
 
@@ -291,8 +281,8 @@ class MobileFlowerClient:
 
     def compress_gradients(
         self,
-        parameters: List[NDArray],
-    ) -> List[NDArray]:
+        parameters: list[NDArray],
+    ) -> list[NDArray]:
         if not self.config.compress_gradients:
             return parameters
 
@@ -316,7 +306,7 @@ class MobileFlowerClient:
 
     def encrypt_weights(
         self,
-        parameters: List[NDArray],
+        parameters: list[NDArray],
     ) -> bytes:
         if self.pqc_transport is None:
             # Fallback: serialize without encryption
@@ -366,21 +356,21 @@ class FlowerClientAdapter(NumPyClient):
     def __init__(self, mobile_client: MobileFlowerClient) -> None:
         self.mobile_client = mobile_client
 
-    def get_properties(self, config: Dict[str, Scalar]) -> Dict[str, Scalar]:
+    def get_properties(self, config: dict[str, Scalar]) -> dict[str, Scalar]:
         return {
             "client_id": self.mobile_client.config.client_id,
             "pqc_enabled": str(self.mobile_client.config.enable_pqc),
             "battery_aware": str(self.mobile_client.config.battery_aware),
         }
 
-    def get_parameters(self, config: Dict[str, Scalar]) -> List[NDArray]:
+    def get_parameters(self, config: dict[str, Scalar]) -> list[NDArray]:
         return self.mobile_client.get_parameters()
 
     def fit(
         self,
-        parameters: List[NDArray],
-        config: Dict[str, Scalar],
-    ) -> Tuple[List[NDArray], int, Dict[str, Scalar]]:
+        parameters: list[NDArray],
+        config: dict[str, Scalar],
+    ) -> tuple[list[NDArray], int, dict[str, Scalar]]:
         # Set global parameters
         self.mobile_client.set_parameters(parameters)
 
@@ -409,9 +399,9 @@ class FlowerClientAdapter(NumPyClient):
 
     def evaluate(
         self,
-        parameters: List[NDArray],
-        config: Dict[str, Scalar],
-    ) -> Tuple[float, int, Dict[str, Scalar]]:
+        parameters: list[NDArray],
+        config: dict[str, Scalar],
+    ) -> tuple[float, int, dict[str, Scalar]]:
         self.mobile_client.set_parameters(parameters)
 
         if self.mobile_client._val_data is None:

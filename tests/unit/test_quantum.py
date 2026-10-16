@@ -1,24 +1,22 @@
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import assert_array_almost_equal
 
 # Import modules to test
 from qedge.quantum.circuits import (
+    EntanglementPattern,
     VariationalQuantumCircuit,
     VQCConfig,
-    EntanglementPattern,
-    AnsatzType,
 )
 from qedge.quantum.kernels import (
-    QuantumKernelAlignment,
     QKAConfig,
-    FeatureMapType,
+    QuantumKernelAlignment,
 )
 from qedge.quantum.zne import (
-    ZeroNoiseExtrapolation,
-    ZNEConfig,
     ExtrapolationMethod,
     MeasurementErrorMitigation,
+    ZeroNoiseExtrapolation,
+    ZNEConfig,
 )
 
 
@@ -286,8 +284,8 @@ class TestQuantumAggregator:
     @pytest.mark.asyncio
     async def test_aggregator_initialization(self):
         from qedge.fl.aggregator import (
-            QuantumGlobalAggregator,
             QuantumAggregatorConfig,
+            QuantumGlobalAggregator,
         )
 
         config = QuantumAggregatorConfig(n_qubits=4, vqc_layers=2)
@@ -300,9 +298,9 @@ class TestQuantumAggregator:
     @pytest.mark.asyncio
     async def test_classical_aggregation(self):
         from qedge.fl.aggregator import (
-            QuantumGlobalAggregator,
-            QuantumAggregatorConfig,
             LocalModelUpdate,
+            QuantumAggregatorConfig,
+            QuantumGlobalAggregator,
         )
 
         config = QuantumAggregatorConfig(n_qubits=4, vqc_layers=2)
@@ -330,9 +328,9 @@ class TestQuantumAggregator:
     @pytest.mark.asyncio
     async def test_quantum_aggregation(self):
         from qedge.fl.aggregator import (
-            QuantumGlobalAggregator,
-            QuantumAggregatorConfig,
             LocalModelUpdate,
+            QuantumAggregatorConfig,
+            QuantumGlobalAggregator,
         )
 
         config = QuantumAggregatorConfig(

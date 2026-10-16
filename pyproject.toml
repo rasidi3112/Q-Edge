@@ -115,7 +115,8 @@ known-first-party = ["qedge"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
-"demo.py" = ["D"]
+# demo.py predates these rules and prints emoji; it is replaced by a CLI demo later.
+"demo.py" = ["D", "RUF001"]
 
 [tool.mypy]
 python_version = "3.11"

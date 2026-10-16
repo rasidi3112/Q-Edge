@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, Sequence
+from typing import Any
 
 import numpy as np
 import pennylane as qml
@@ -51,8 +52,8 @@ class VariationalQuantumCircuit:
         self,
         config: VQCConfig,
         device_name: str = "default.qubit",
-        shots: Optional[int] = None,
-        seed: Optional[int] = None,
+        shots: int | None = None,
+        seed: int | None = None,
     ) -> None:
         self.config = config
         self._shots = shots
@@ -208,7 +209,7 @@ class VariationalQuantumCircuit:
     def forward(
         self,
         features: NDArray[np.float64],
-        params: Optional[NDArray[np.float64]] = None,
+        params: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         if params is None:
             params = self.params
@@ -228,7 +229,7 @@ class VariationalQuantumCircuit:
     def batch_forward(
         self,
         features_batch: NDArray[np.float64],
-        params: Optional[NDArray[np.float64]] = None,
+        params: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         results = []
         for features in features_batch:
@@ -299,7 +300,7 @@ class VariationalQuantumCircuit:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "VariationalQuantumCircuit":
+    def from_dict(cls, data: dict[str, Any]) -> VariationalQuantumCircuit:
         config = VQCConfig(
             n_qubits=data["config"]["n_qubits"],
             n_layers=data["config"]["n_layers"],

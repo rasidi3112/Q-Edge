@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import logging
@@ -10,12 +9,12 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 from jose import JWTError, jwt
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +241,7 @@ class PQCProvider:
 def create_jwt_token(
     client_id: str,
     session_id: str,
-    expires_delta: Optional[timedelta] = None,
+    expires_delta: timedelta | None = None,
 ) -> str:
     secret_key = os.getenv("JWT_SECRET_KEY", "development-secret-key-change-me")
     algorithm = os.getenv("JWT_ALGORITHM", "HS256")
@@ -264,7 +263,7 @@ def create_jwt_token(
     return encoded_jwt
 
 
-def verify_jwt_token(token: str) -> Dict[str, Any]:
+def verify_jwt_token(token: str) -> dict[str, Any]:
     secret_key = os.getenv("JWT_SECRET_KEY", "development-secret-key-change-me")
     algorithm = os.getenv("JWT_ALGORITHM", "HS256")
 
@@ -275,13 +274,13 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}",
+            detail=f"Invalid token: {e!s}",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
 
 class PQCAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, excluded_paths: Optional[list] = None) -> None:
+    def __init__(self, app, excluded_paths: list | None = None) -> None:
         super().__init__(app)
         self.pqc_provider = PQCProvider()
         self.excluded_paths = excluded_paths or [
@@ -325,7 +324,7 @@ class PQCAuthMiddleware(BaseHTTPMiddleware):
                 logger.warning(f"PQC verification failed: {e}")
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": f"PQC verification failed: {str(e)}"},
+                    content={"detail": f"PQC verification failed: {e!s}"},
                 )
 
         # Continue with request

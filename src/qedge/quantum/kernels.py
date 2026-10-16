@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import pennylane as qml
@@ -35,7 +35,7 @@ class QuantumKernelAlignment:
         self,
         config: QKAConfig,
         device_name: str = "default.qubit",
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         self.config = config
         self._seed = seed
@@ -173,7 +173,7 @@ class QuantumKernelAlignment:
         self,
         x1: NDArray[np.float64],
         x2: NDArray[np.float64],
-        params: Optional[NDArray[np.float64]] = None,
+        params: NDArray[np.float64] | None = None,
     ) -> float:
         if params is None:
             params = self.feature_map_params
@@ -185,8 +185,8 @@ class QuantumKernelAlignment:
     def compute_kernel_matrix(
         self,
         X: NDArray[np.float64],
-        Y: Optional[NDArray[np.float64]] = None,
-        params: Optional[NDArray[np.float64]] = None,
+        Y: NDArray[np.float64] | None = None,
+        params: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         if params is None:
             params = self.feature_map_params
@@ -315,8 +315,8 @@ class QuantumKernelAlignment:
         self,
         X_train: NDArray[np.float64],
         y_train: NDArray[np.float64],
-        X_val: Optional[NDArray[np.float64]] = None,
-        y_val: Optional[NDArray[np.float64]] = None,
+        X_val: NDArray[np.float64] | None = None,
+        y_val: NDArray[np.float64] | None = None,
     ) -> dict[str, Any]:
         # First align to ideal kernel
         result = self.align_to_target(X_train, y_train, kernel_type="ideal")
@@ -385,7 +385,7 @@ class QuantumKernelAlignment:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "QuantumKernelAlignment":
+    def from_dict(cls, data: dict[str, Any]) -> QuantumKernelAlignment:
         config = QKAConfig(
             n_qubits=data["config"]["n_qubits"],
             n_layers=data["config"]["n_layers"],

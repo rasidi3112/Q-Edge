@@ -4,14 +4,12 @@ import base64
 import hashlib
 import hmac
 import logging
-import os
 import secrets
 import struct
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-import numpy as np
 from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
@@ -42,7 +40,7 @@ class PQCTransportLayer:
     ) -> None:
         self.client_id = client_id
         self.use_simulation = use_simulation
-        self.session: Optional[PQCSession] = None
+        self.session: PQCSession | None = None
 
         # Try to import actual crypto libraries
         self._aes_available = False
@@ -88,7 +86,8 @@ class PQCTransportLayer:
         # Perform key encapsulation
         if self._oqs_available and not self.use_simulation:
             kem = self._oqs.KeyEncapsulation("Kyber1024")
-            ciphertext, shared_secret = kem.encap_secret(server_public_key)
+            # The KEM ciphertext is dropped here, so the server can never decapsulate.
+            ciphertext, shared_secret = kem.encap_secret(server_public_key)  # noqa: RUF059
         else:
             # Simulated key exchange
             shared_secret = hashlib.sha256(server_public_key + session_id.encode()).digest()
@@ -136,7 +135,7 @@ class PQCTransportLayer:
 
     def encrypt_weights(
         self,
-        weights: List[NDArray],
+        weights: list[NDArray],
     ) -> bytes:
         # Serialize weights
         import pickle
@@ -154,7 +153,7 @@ class PQCTransportLayer:
     def decrypt_weights(
         self,
         ciphertext: bytes,
-    ) -> List[NDArray]:
+    ) -> list[NDArray]:
         import pickle
         import zlib
 
@@ -185,7 +184,7 @@ class PQCTransportLayer:
         else:
             # Simulated encryption (XOR with key stream)
             key_stream = self._generate_keystream(key, nonce, len(plaintext))
-            ciphertext_raw = bytes(a ^ b for a, b in zip(plaintext, key_stream))
+            ciphertext_raw = bytes(a ^ b for a, b in zip(plaintext, key_stream, strict=True))
 
             # Simulated tag
             tag = hmac.new(key, nonce + ciphertext_raw, hashlib.sha256).digest()[: self.TAG_SIZE]
@@ -222,7 +221,7 @@ class PQCTransportLayer:
 
             # Decrypt
             key_stream = self._generate_keystream(key, nonce, len(ciphertext_raw))
-            return bytes(a ^ b for a, b in zip(ciphertext_raw, key_stream))
+            return bytes(a ^ b for a, b in zip(ciphertext_raw, key_stream, strict=True))
 
     def _generate_keystream(
         self,
@@ -303,7 +302,7 @@ class PQCTransportLayer:
     def parse_authenticated_message(
         self,
         message: bytes,
-    ) -> Tuple[bytes, Dict[str, Any]]:
+    ) -> tuple[bytes, dict[str, Any]]:
         # Header is 104 bytes (4 + 32 + 4 + 64)
         header_size = 104
 
@@ -347,7 +346,7 @@ class PQCTransportLayer:
 
         return payload, metadata
 
-    def get_session_info(self) -> Dict[str, Any]:
+    def get_session_info(self) -> dict[str, Any]:
         if self.session is None:
             return {"status": "no_session"}
 

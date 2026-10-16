@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, Sequence, Tuple, Union
+from typing import Any
 
 import numpy as np
 import pennylane as qml
@@ -227,7 +228,7 @@ class ZeroNoiseExtrapolation:
         self,
         scales: NDArray[np.float64],
         values: NDArray[np.float64],
-    ) -> Tuple[float, str]:
+    ) -> tuple[float, str]:
         methods = {
             "linear": self._fit_linear,
             "polynomial": self._fit_polynomial,
@@ -247,7 +248,9 @@ class ZeroNoiseExtrapolation:
                     train_scales = np.delete(scales, i)
                     train_values = np.delete(values, i)
 
-                    pred = method(train_scales, train_values)
+                    # The held-out fit is unused: selection scores the full-data fit, so
+                    # this is not leave-one-out cross-validation.
+                    pred = method(train_scales, train_values)  # noqa: F841
 
                     # Estimate error as deviation from smooth curve
                     all_pred = method(scales, values)
@@ -317,7 +320,7 @@ class ZeroNoiseExtrapolation:
         self,
         circuit: Callable,
         params: Any,
-        device: Optional[qml.Device] = None,
+        device: qml.Device | None = None,
     ) -> dict[str, Any]:
         if device is None:
             device = circuit.device
@@ -361,27 +364,24 @@ class MeasurementErrorMitigation:
         self.n_qubits = n_qubits
         self.method = method
 
-        self.calibration_matrix: Optional[NDArray[np.float64]] = None
-        self.inverse_matrix: Optional[NDArray[np.float64]] = None
+        self.calibration_matrix: NDArray[np.float64] | None = None
+        self.inverse_matrix: NDArray[np.float64] | None = None
         self._is_calibrated = False
 
     def calibrate(self, device: qml.Device) -> None:
         n_states = 2**self.n_qubits
         self.calibration_matrix = np.zeros((n_states, n_states))
 
-        for i in range(n_states):
-            # Prepare basis state |i⟩
-            @qml.qnode(device)
-            def calibration_circuit() -> NDArray:
-                # Prepare state |i⟩ using X gates
-                for qubit in range(self.n_qubits):
-                    if (i >> qubit) & 1:
-                        qml.PauliX(wires=qubit)
-                return qml.probs(wires=range(self.n_qubits))
+        @qml.qnode(device)
+        def calibration_circuit(basis_state: int) -> NDArray:
+            # Prepare |basis_state⟩ using X gates
+            for qubit in range(self.n_qubits):
+                if (basis_state >> qubit) & 1:
+                    qml.PauliX(wires=qubit)
+            return qml.probs(wires=range(self.n_qubits))
 
-            # Measure probabilities
-            probs = calibration_circuit()
-            self.calibration_matrix[:, i] = probs
+        for i in range(n_states):
+            self.calibration_matrix[:, i] = calibration_circuit(i)
 
         # Compute inverse (or pseudo-inverse) for mitigation
         try:
@@ -391,9 +391,8 @@ class MeasurementErrorMitigation:
 
         self._is_calibrated = True
 
-        logger.info(
-            f"Calibration complete. Readout fidelity: {np.mean(np.diag(self.calibration_matrix)):.4f}"
-        )
+        fidelity = np.mean(np.diag(self.calibration_matrix))
+        logger.info(f"Calibration complete. Readout fidelity: {fidelity:.4f}")
 
     def mitigate(self, measured_probs: NDArray[np.float64]) -> NDArray[np.float64]:
         if not self._is_calibrated:

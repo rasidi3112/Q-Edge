@@ -3,6 +3,7 @@
 import asyncio
 import sys
 import time
+
 import numpy as np
 
 
@@ -61,7 +62,7 @@ def print_status(message, status="info"):
 def demo_quantum_circuits():
     print_section("🔮 Demo 1: Variational Quantum Circuits (VQC)")
 
-    from qedge.quantum.circuits import VariationalQuantumCircuit, VQCConfig, EntanglementPattern
+    from qedge.quantum.circuits import EntanglementPattern, VariationalQuantumCircuit, VQCConfig
 
     print_status("Creating VQC with 8 qubits, 4 layers...", "quantum")
 
@@ -86,7 +87,7 @@ def demo_quantum_circuits():
     exec_time = (time.time() - start_time) * 1000
 
     print_status(f"Execution time: {exec_time:.2f}ms", "success")
-    print_status(f"Output probabilities (first 8):", "info")
+    print_status("Output probabilities (first 8):", "info")
 
     for i in range(min(8, len(output))):
         bitstring = format(i, "08b")
@@ -102,7 +103,7 @@ def demo_quantum_circuits():
 def demo_quantum_kernels():
     print_section("🎯 Demo 2: Quantum Kernel Alignment (QKA)")
 
-    from qedge.quantum.kernels import QuantumKernelAlignment, QKAConfig, FeatureMapType
+    from qedge.quantum.kernels import FeatureMapType, QKAConfig, QuantumKernelAlignment
 
     print_status("Initializing QKA with ZZ feature map...", "quantum")
 
@@ -121,7 +122,6 @@ def demo_quantum_kernels():
     X1 = np.random.randn(10, 4) + 1
 
     X = np.vstack([X0, X1])
-    y = np.array([0] * 10 + [1] * 10)
 
     print_status("Computing quantum kernel matrix...", "quantum")
 
@@ -163,7 +163,7 @@ def demo_quantum_kernels():
 def demo_error_mitigation():
     print_section("🛡️ Demo 3: Zero-Noise Extrapolation (ZNE)")
 
-    from qedge.quantum.zne import ZeroNoiseExtrapolation, ZNEConfig, ExtrapolationMethod
+    from qedge.quantum.zne import ExtrapolationMethod, ZeroNoiseExtrapolation, ZNEConfig
 
     print_status("Simulating NISQ noise and extrapolation...", "quantum")
 
@@ -181,7 +181,7 @@ def demo_error_mitigation():
     noisy_values = ideal_value * np.exp(-0.15 * (scales - 1)) + np.random.randn(len(scales)) * 0.01
 
     print_status("\nNoisy measurements at different scales:", "info")
-    for s, v in zip(scales, noisy_values):
+    for s, v in zip(scales, noisy_values, strict=True):
         print(f"    λ = {s:.1f}: ⟨O⟩ = {v:.4f}")
 
     print_status("\nApplying Richardson extrapolation...", "quantum")
@@ -203,10 +203,10 @@ async def demo_quantum_aggregation():
     print_section("🌐 Demo 4: Federated Learning with Quantum Aggregation")
 
     from qedge.fl.aggregator import (
-        QuantumGlobalAggregator,
-        QuantumAggregatorConfig,
-        LocalModelUpdate,
         AggregationStrategy,
+        LocalModelUpdate,
+        QuantumAggregatorConfig,
+        QuantumGlobalAggregator,
     )
 
     print_status("Initializing Quantum Global Aggregator...", "quantum")
@@ -223,7 +223,7 @@ async def demo_quantum_aggregation():
     aggregator = QuantumGlobalAggregator(config, seed=42)
 
     print_status(f"VQC: {config.n_qubits} qubits, {config.vqc_layers} layers", "info")
-    print_status(f"Aggregation: 70% classical + 30% quantum", "info")
+    print_status("Aggregation: 70% classical + 30% quantum", "info")
 
     n_clients = 5
     n_rounds = 3

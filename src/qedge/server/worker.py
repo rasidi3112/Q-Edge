@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 from celery import Celery, Task
@@ -81,9 +81,9 @@ class QuantumTask(Task):
 def submit_quantum_aggregation(
     self,
     circuit_type: str,
-    parameters: Dict[str, Any],
+    parameters: dict[str, Any],
     shots: int = 1024,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     logger.info(f"Starting quantum aggregation: circuit={circuit_type}, shots={shots}")
 
     start_time = time.time()
@@ -91,9 +91,9 @@ def submit_quantum_aggregation(
     try:
         # Import here to avoid circular imports
         from qedge.fl.aggregator import (
-            QuantumGlobalAggregator,
-            QuantumAggregatorConfig,
             LocalModelUpdate,
+            QuantumAggregatorConfig,
+            QuantumGlobalAggregator,
         )
 
         # Initialize aggregator
@@ -157,7 +157,7 @@ def submit_quantum_aggregation(
 
         # Retry on transient failures
         if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
+            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
 
         return {
             "status": "failed",
@@ -169,9 +169,9 @@ def submit_quantum_aggregation(
 @celery_app.task(base=QuantumTask, bind=True, name="execute_quantum_circuit")
 def execute_quantum_circuit(
     self,
-    circuit_definition: Dict[str, Any],
+    circuit_definition: dict[str, Any],
     shots: int = 1024,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     logger.info("Executing quantum circuit on the local simulator")
 
     start_time = time.time()
@@ -240,7 +240,7 @@ def process_federated_update(
     weights: list,
     n_samples: int,
     local_loss: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     logger.info(f"Processing federated update from {client_id}")
 
     # Validate weights
@@ -275,7 +275,7 @@ def process_federated_update(
 
 
 @celery_app.task(name="cleanup_expired_jobs")
-def cleanup_expired_jobs() -> Dict[str, Any]:
+def cleanup_expired_jobs() -> dict[str, Any]:
     logger.info("Running job cleanup...")
 
     # In production, would clean up Redis/database entries
@@ -286,7 +286,7 @@ def cleanup_expired_jobs() -> Dict[str, Any]:
     }
 
 
-def get_task_status(task_id: str) -> Dict[str, Any]:
+def get_task_status(task_id: str) -> dict[str, Any]:
     result = AsyncResult(task_id, app=celery_app)
 
     status_info = {

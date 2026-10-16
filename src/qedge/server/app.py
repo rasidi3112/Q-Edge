@@ -5,8 +5,8 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
 import numpy as np
 from fastapi import (
@@ -19,27 +19,25 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from qedge import __version__
+from qedge.fl.aggregator import (
+    LocalModelUpdate,
+    QuantumAggregatorConfig,
+    QuantumGlobalAggregator,
+)
 from qedge.server.auth import (
     PQCAuthMiddleware,
-    verify_jwt_token,
     create_jwt_token,
-)
-from qedge.server.worker import (
-    celery_app,
-    submit_quantum_aggregation,
-    get_task_status,
-)
-from qedge.fl.aggregator import (
-    QuantumGlobalAggregator,
-    QuantumAggregatorConfig,
-    LocalModelUpdate,
+    verify_jwt_token,
 )
 from qedge.server.settings import Settings
+from qedge.server.worker import (
+    get_task_status,
+    submit_quantum_aggregation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Pydantic models for API
 class ClientRegistration(BaseModel):
     client_id: str = Field(..., description="Unique client identifier")
-    device_info: Dict[str, Any] = Field(default_factory=dict)
+    device_info: dict[str, Any] = Field(default_factory=dict)
     public_key: str = Field(..., description="PQC public key (Kyber)")
     signature: str = Field(..., description="Registration signature (Dilithium)")
 
@@ -63,23 +61,23 @@ class ClientAuthResponse(BaseModel):
 class ModelWeightsSubmission(BaseModel):
     client_id: str
     round_number: int
-    weights: List[float]
+    weights: list[float]
     n_samples: int
     local_loss: float
-    encrypted_metadata: Optional[str] = None
+    encrypted_metadata: str | None = None
 
 
 class AggregationResult(BaseModel):
     round_number: int
-    global_weights: List[float]
-    quantum_embedding: Optional[List[float]] = None
-    metrics: Dict[str, Any]
+    global_weights: list[float]
+    quantum_embedding: list[float] | None = None
+    metrics: dict[str, Any]
     timestamp: str
 
 
 class QuantumJobSubmission(BaseModel):
     circuit_type: str = Field(..., description="Type of quantum circuit")
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
     shots: int = Field(default=1024, ge=1, le=10000)
 
 
@@ -87,23 +85,23 @@ class QuantumJobStatus(BaseModel):
     job_id: str
     status: str
     progress: float
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class HealthCheckResponse(BaseModel):
     status: str
     version: str
     timestamp: str
-    services: Dict[str, str]
+    services: dict[str, str]
 
 
 @dataclass
 class ServerState:
     settings: Settings
     aggregator: QuantumGlobalAggregator
-    registered_clients: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    current_round_updates: List[LocalModelUpdate] = field(default_factory=list)
+    registered_clients: dict[str, dict[str, Any]] = field(default_factory=dict)
+    current_round_updates: list[LocalModelUpdate] = field(default_factory=list)
 
 
 def get_state(request: Request) -> ServerState:
@@ -202,7 +200,7 @@ async def register_client(
 async def get_current_client(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     state: ServerState = Depends(get_state),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     token = credentials.credentials
 
     try:
@@ -224,21 +222,21 @@ async def get_current_client(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}",
-        )
+            detail=f"Invalid token: {e!s}",
+        ) from e
 
 
 # Federated Learning endpoints
 @router.post(
     "/fl/submit-weights",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     tags=["Federated Learning"],
 )
 async def submit_weights(
     submission: ModelWeightsSubmission,
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
     state: ServerState = Depends(get_state),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if submission.client_id != client["client_id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -271,7 +269,7 @@ async def submit_weights(
     tags=["Federated Learning"],
 )
 async def trigger_aggregation(
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
     state: ServerState = Depends(get_state),
 ) -> AggregationResult:
     current_round_updates = state.current_round_updates
@@ -312,13 +310,13 @@ async def trigger_aggregation(
 
 @router.get(
     "/fl/global-model",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     tags=["Federated Learning"],
 )
 async def get_global_model(
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
     state: ServerState = Depends(get_state),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if state.aggregator.global_state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -337,10 +335,10 @@ async def get_global_model(
 
 @router.get(
     "/fl/metrics",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     tags=["Federated Learning"],
 )
-async def get_fl_metrics(state: ServerState = Depends(get_state)) -> Dict[str, Any]:
+async def get_fl_metrics(state: ServerState = Depends(get_state)) -> dict[str, Any]:
     return state.aggregator.get_aggregation_metrics()
 
 
@@ -352,7 +350,7 @@ async def get_fl_metrics(state: ServerState = Depends(get_state)) -> Dict[str, A
 )
 async def submit_quantum_job(
     job: QuantumJobSubmission,
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
 ) -> QuantumJobStatus:
     logger.info(f"Submitting quantum job: {job.circuit_type}")
 
@@ -377,7 +375,7 @@ async def submit_quantum_job(
 )
 async def get_quantum_job_status(
     job_id: str,
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
 ) -> QuantumJobStatus:
     status_info = get_task_status(job_id)
 
@@ -393,9 +391,9 @@ async def get_quantum_job_status(
 # Admin endpoints (protected)
 @router.get("/admin/clients", tags=["Admin"])
 async def list_clients(
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
     state: ServerState = Depends(get_state),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "total_clients": len(state.registered_clients),
         "clients": list(state.registered_clients.keys()),
@@ -404,9 +402,9 @@ async def list_clients(
 
 @router.get("/admin/aggregator-state", tags=["Admin"])
 async def get_aggregator_state(
-    client: Dict[str, Any] = Depends(get_current_client),
+    client: dict[str, Any] = Depends(get_current_client),
     state: ServerState = Depends(get_state),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     aggregator = state.aggregator
     return {
         "current_round": aggregator._current_round,

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from qedge.quantum.circuits import VQCConfig, VariationalQuantumCircuit
+from qedge.quantum.circuits import VariationalQuantumCircuit, VQCConfig
 from qedge.quantum.kernels import QKAConfig, QuantumKernelAlignment
-from qedge.quantum.zne import ZNEConfig, ZeroNoiseExtrapolation
+from qedge.quantum.zne import ZeroNoiseExtrapolation, ZNEConfig
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +27,20 @@ class AggregationStrategy(Enum):
 class LocalModelUpdate:
     client_id: str
     weights: NDArray[np.float64]
-    gradients: Optional[NDArray[np.float64]] = None
+    gradients: NDArray[np.float64] | None = None
     n_samples: int = 0
     local_loss: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class GlobalModelState:
     weights: NDArray[np.float64]
     round_number: int
-    quantum_embedding: Optional[NDArray[np.float64]] = None
-    aggregation_metrics: Dict[str, Any] = field(default_factory=dict)
-    vqc_params: Optional[NDArray[np.float64]] = None
-    kernel_params: Optional[NDArray[np.float64]] = None
+    quantum_embedding: NDArray[np.float64] | None = None
+    aggregation_metrics: dict[str, Any] = field(default_factory=dict)
+    vqc_params: NDArray[np.float64] | None = None
+    kernel_params: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -58,7 +59,7 @@ class QuantumGlobalAggregator:
     def __init__(
         self,
         config: QuantumAggregatorConfig,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         self.config = config
         self._seed = seed
@@ -89,8 +90,8 @@ class QuantumGlobalAggregator:
             self.zne = None
 
         # State tracking
-        self.global_state: Optional[GlobalModelState] = None
-        self.round_history: List[GlobalModelState] = []
+        self.global_state: GlobalModelState | None = None
+        self.round_history: list[GlobalModelState] = []
         self._current_round = 0
 
         logger.info(
@@ -129,7 +130,7 @@ class QuantumGlobalAggregator:
         weight_shape = updates[0].weights.shape
 
         aggregated = np.zeros(weight_shape)
-        for update, w in zip(updates, weights):
+        for update, w in zip(updates, weights, strict=True):
             aggregated += w * update.weights
 
         return aggregated
@@ -240,7 +241,7 @@ class QuantumGlobalAggregator:
 
     def _compute_kernel_distance(
         self,
-        weights_list: List[NDArray[np.float64]],
+        weights_list: list[NDArray[np.float64]],
     ) -> NDArray[np.float64]:
         # Compress each weight vector
         compressed_weights = np.array([self._compress_weights(w) for w in weights_list])
@@ -290,7 +291,7 @@ class QuantumGlobalAggregator:
         classical_weights = self._classical_aggregate(updates)
         original_shape = classical_weights.shape
 
-        metrics: Dict[str, Any] = {
+        metrics: dict[str, Any] = {
             "round": self._current_round,
             "n_clients": len(updates),
             "total_samples": sum(u.n_samples for u in updates),
@@ -358,7 +359,7 @@ class QuantumGlobalAggregator:
         updates: Sequence[LocalModelUpdate],
         labels: NDArray[np.float64],
         n_epochs: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         weights_list = [u.weights for u in updates]
         compressed = np.array([self._compress_weights(w) for w in weights_list])
 
@@ -378,7 +379,7 @@ class QuantumGlobalAggregator:
 
         return training_results
 
-    def get_aggregation_metrics(self) -> Dict[str, Any]:
+    def get_aggregation_metrics(self) -> dict[str, Any]:
         if len(self.round_history) == 0:
             return {"message": "No aggregation rounds completed"}
 
@@ -410,17 +411,15 @@ class QuantumGlobalAggregator:
             },
         }
 
-        with open(filepath, "w") as f:
-            json.dump(state, f, indent=2)
+        Path(filepath).write_text(json.dumps(state, indent=2))
 
         logger.info(f"Saved aggregator state to {filepath}")
 
     @classmethod
-    def load_state(cls, filepath: str) -> "QuantumGlobalAggregator":
+    def load_state(cls, filepath: str) -> QuantumGlobalAggregator:
         import json
 
-        with open(filepath, "r") as f:
-            state = json.load(f)
+        state = json.loads(Path(filepath).read_text())
 
         config = QuantumAggregatorConfig(
             n_qubits=state["config"]["n_qubits"],

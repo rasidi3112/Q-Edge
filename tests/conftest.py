@@ -1,5 +1,6 @@
-import pytest
 import asyncio
+
+import pytest
 
 
 @pytest.fixture(scope="session")
@@ -30,6 +31,7 @@ def random_weights():
 @pytest.fixture
 def sample_updates():
     import numpy as np
+
     from qedge.fl.aggregator import LocalModelUpdate
 
     np.random.seed(42)

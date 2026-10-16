@@ -1,7 +1,7 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
-import numpy as np
 
 from qedge.server.app import create_app
 from qedge.server.settings import Settings
@@ -235,7 +235,7 @@ class TestSecurity:
         assert payload["session_id"] == "session123"
 
     def test_pqc_provider_keypair_generation(self):
-        from qedge.server.auth import PQCProvider, PQCAlgorithm
+        from qedge.server.auth import PQCAlgorithm, PQCProvider
 
         provider = PQCProvider(use_simulation=True)
         keypair = provider.generate_keypair(PQCAlgorithm.KYBER_1024)
@@ -245,7 +245,7 @@ class TestSecurity:
         assert len(keypair.public_key) > 0
 
     def test_pqc_encapsulation(self):
-        from qedge.server.auth import PQCProvider, PQCAlgorithm
+        from qedge.server.auth import PQCAlgorithm, PQCProvider
 
         provider = PQCProvider(use_simulation=True)
         keypair = provider.generate_keypair(PQCAlgorithm.KYBER_1024)
@@ -260,7 +260,7 @@ class TestSecurity:
         assert len(encapsulated.shared_secret) == 32
 
     def test_pqc_signing(self):
-        from qedge.server.auth import PQCProvider, PQCAlgorithm
+        from qedge.server.auth import PQCAlgorithm, PQCProvider
 
         provider = PQCProvider(use_simulation=True)
         keypair = provider.generate_keypair(PQCAlgorithm.DILITHIUM_5)
