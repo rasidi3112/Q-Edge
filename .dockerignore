@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+venv
+.env
+**/__pycache__
+**/*.pyc
+.mypy_cache
+.pytest_cache
+.ruff_cache
+*.egg-info
+commit-plan
+docs
+mobile_app
+tests
