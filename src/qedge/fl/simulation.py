@@ -29,10 +29,12 @@ import numpy as np
 import yaml
 from numpy.typing import NDArray
 
+from qedge.fl.attacks import Attack
 from qedge.fl.compression import TopKCompressor, dense_bytes
 from qedge.fl.models import build_model, count_parameters, get_weights, set_weights
 from qedge.fl.partition import Dataset, dirichlet_partition, load_dataset
 from qedge.fl.privacy import clip_and_noise
+from qedge.fl.robust import RobustAggregator
 from qedge.fl.strategies import Aggregator, ServerStrategy
 from qedge.fl.training import TrainConfig, evaluate, local_train, weight_delta
 
@@ -49,7 +51,10 @@ class SimulationConfig:
     ``strategy`` ``"fedprox"`` means FedAvg on the server with the proximal
     term ``mu`` in the client loss; ``mu`` must be 0 for other strategies.
     ``compression`` is the top-k ratio (None sends dense updates). ``dp_clip``
-    enables clipping, ``dp_noise`` is the noise multiplier.
+    enables clipping, ``dp_noise`` is the noise multiplier. ``attack`` (one of
+    `qedge.fl.attacks.ATTACKS`) is applied by ``attack_fraction`` of the
+    clients. ``defense`` (one of `qedge.fl.robust.DEFENSES`) replaces FedAvg
+    on the server and needs ``strategy`` fedavg or fedprox.
     """
 
     dataset: str = "breast_cancer"
@@ -68,6 +73,11 @@ class SimulationConfig:
     dp_clip: float | None = None
     dp_noise: float = 0.0
     model_options: dict[str, Any] = field(default_factory=dict)
+    attack: str | None = None
+    attack_fraction: float = 0.0
+    attack_scale: float | None = None
+    defense: str | None = None
+    defense_options: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.strategy not in STRATEGIES:
@@ -78,14 +88,31 @@ class SimulationConfig:
             raise ValueError("clients and rounds must be at least 1")
         if self.dp_noise and self.dp_clip is None:
             raise ValueError("dp_noise needs dp_clip")
+        if self.attack is None and (self.attack_fraction or self.attack_scale is not None):
+            raise ValueError("attack_fraction and attack_scale need an attack")
+        self.attack_config()
+        if self.defense is not None:
+            if self.strategy not in ("fedavg", "fedprox"):
+                raise ValueError("defenses replace FedAvg; use strategy fedavg or fedprox")
+            RobustAggregator(self.defense, **self.defense_options)
+        elif self.defense_options:
+            raise ValueError("defense_options need a defense")
+
+    def attack_config(self) -> Attack | None:
+        """The attack of this run, or None."""
+        if self.attack is None:
+            return None
+        return Attack(self.attack, self.attack_fraction, self.attack_scale)
 
     def train_config(self) -> TrainConfig:
         """Client hyperparameters; FedProx defaults to mu = 0.01 when unset."""
         mu = self.mu if self.mu or self.strategy != "fedprox" else 0.01
         return TrainConfig(self.local_epochs, self.batch_size, self.lr, mu)
 
-    def server_strategy(self) -> ServerStrategy:
+    def server_strategy(self) -> ServerStrategy | RobustAggregator:
         """The server rule for this run."""
+        if self.defense is not None:
+            return RobustAggregator(self.defense, **self.defense_options)
         if self.strategy in ("fedavg", "fedprox"):
             return ServerStrategy("fedavg")
         return ServerStrategy(self.strategy, lr=self.server_lr)
@@ -96,6 +123,8 @@ class SimulationConfig:
         return (
             f"{stamp}-{self.dataset}-{self.model}-{self.strategy}"
             f"-c{self.clients}-a{self.alpha:g}-s{self.seed}"
+            + (f"-{self.attack}{self.attack_fraction:g}" if self.attack else "")
+            + (f"-{self.defense}" if self.defense else "")
         )
 
 
@@ -155,6 +184,9 @@ def run_simulation(
         [TopKCompressor(config.compression) for _ in shards] if config.compression else None
     )
     noise_rng = np.random.default_rng(config.seed + 1)
+    attack = config.attack_config()
+    attackers = attack.attackers(config.clients, config.seed) if attack else frozenset()
+    attack_rng = np.random.default_rng([config.seed, 11])
     partition = [
         {
             "client": i,
@@ -174,6 +206,7 @@ def run_simulation(
             "model": model.describe() if hasattr(model, "describe") else None,
             "partition": partition,
             "test_samples": len(data.y_test),
+            "attackers": sorted(attackers),
             "environment": environment(),
         }
         (run_dir / "config.yaml").write_text(yaml.safe_dump(record, sort_keys=False))
@@ -187,11 +220,11 @@ def run_simulation(
         for client, shard in enumerate(shards):
             set_weights(model, global_weights)
             seed = config.seed * 1_000_003 + round_index * 1_009 + client
-            losses.append(
-                local_train(
-                    model, data.x_train[shard], data.y_train[shard], train_config, seed=seed
-                )
-            )
+            malicious = attack is not None and client in attackers
+            labels = data.y_train[shard]
+            if attack is not None and malicious:
+                labels = attack.labels(labels, data.n_classes)
+            losses.append(local_train(model, data.x_train[shard], labels, train_config, seed=seed))
             delta = weight_delta(get_weights(model), global_weights)
             if config.dp_clip is not None:
                 delta, _ = clip_and_noise(
@@ -202,8 +235,12 @@ def run_simulation(
             else:
                 sent = dense_bytes(delta)
             bytes_up += sent
+            claimed = len(shard)
+            if attack is not None and malicious:
+                delta = attack.delta(delta, config.clients, attack_rng)
+                claimed = attack.claimed_samples(claimed, config.clients)
             client_weights = {n: global_weights[n] + delta[n] for n in global_weights}
-            updates.append((client_weights, len(shard)))
+            updates.append((client_weights, claimed))
         global_weights = strategy.step(global_weights, updates)
         set_weights(model, global_weights)
         accuracy, loss = evaluate(model, data.x_test, data.y_test)

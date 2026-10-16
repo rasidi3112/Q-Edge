@@ -42,7 +42,7 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess test
 from qedge.fl.models import build_model, get_weights, set_weights
 from qedge.fl.partition import Dataset, dirichlet_partition, load_dataset
 from qedge.fl.simulation import SimulationConfig
-from qedge.fl.strategies import ServerStrategy
+from qedge.fl.strategies import Aggregator
 from qedge.fl.training import evaluate, local_train
 
 logger = logging.getLogger(__name__)
@@ -120,17 +120,17 @@ def client_train(
 
 
 class QEdgeStrategy(FedAvg):
-    """Flower strategy that delegates aggregation to a `ServerStrategy`.
+    """Flower strategy that delegates aggregation to an `Aggregator`.
 
     Sampling, messaging and logging come from Flower's ``FedAvg``; only
     ``aggregate_train`` changes.
 
     Args:
-        server: The aggregation rule.
+        server: The aggregation rule (a `ServerStrategy` or `RobustAggregator`).
         **kwargs: Passed to Flower's ``FedAvg``.
     """
 
-    def __init__(self, server: ServerStrategy, **kwargs: Any) -> None:
+    def __init__(self, server: Aggregator, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.server = server
         self._current: dict[str, NDArray[Any]] | None = None

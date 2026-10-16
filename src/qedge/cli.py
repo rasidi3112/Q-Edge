@@ -32,6 +32,8 @@ FL_MODELS = ("logreg", "mlp", "classical-head", "hybrid-vqc")
 HEAD_MODELS = ("classical-head", "hybrid-vqc")
 ANSATZE = ("strongly_entangling", "hardware_efficient")
 ZNE_METHODS = ("richardson", "poly", "exponential")
+ATTACKS = ("label_flip", "scaling", "random_noise", "fake_samples")
+DEFENSES = ("median", "trimmed_mean", "krum", "multi_krum", "norm_clip", "bounded")
 FL_STRATEGIES = ("fedavg", "fedprox", "fedadam", "fedyogi")
 
 
@@ -90,6 +92,13 @@ def _parser() -> argparse.ArgumentParser:
     sim.add_argument("--dp-clip", type=float, help="L2 clip for update deltas")
     sim.add_argument("--dp-noise", type=float, default=0.0, help="Gaussian noise multiplier")
     sim.add_argument("--out", type=Path, default=Path("results/runs"), help="parent directory")
+    sim.add_argument("--attack", choices=ATTACKS, help="malicious-client behaviour")
+    sim.add_argument("--attack-fraction", type=float, default=0.0)
+    sim.add_argument("--attack-scale", type=float, help="see qedge.fl.attacks")
+    sim.add_argument("--defense", choices=DEFENSES, help="robust rule replacing FedAvg")
+    sim.add_argument("--trim", type=float, dest="beta", help="trimmed_mean beta")
+    sim.add_argument("--krum-f", type=int, dest="f", help="Byzantine clients Krum tolerates")
+    sim.add_argument("--sample-cap", type=float, dest="cap", help="bounded: cap x median")
     head = sim.add_argument_group("hybrid-vqc and classical-head options")
     head.add_argument("--qubits", type=int, dest="n_qubits")
     head.add_argument("--layers", type=int, dest="n_layers")
@@ -223,6 +232,13 @@ def _simulate(args: argparse.Namespace) -> int:
             dp_clip=args.dp_clip,
             dp_noise=args.dp_noise,
             model_options=options,
+            attack=args.attack,
+            attack_fraction=args.attack_fraction,
+            attack_scale=args.attack_scale,
+            defense=args.defense,
+            defense_options={
+                k: getattr(args, k) for k in ("beta", "f", "cap") if getattr(args, k) is not None
+            },
         )
         summary = run_simulation(config, args.out)
     except (ValueError, OSError) as exc:

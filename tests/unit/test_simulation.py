@@ -88,3 +88,39 @@ def test_dp_noise_changes_the_trajectory():
     noisy = run_simulation(SimulationConfig(**SMALL, dp_clip=10.0, dp_noise=1.0))
 
     assert not np.isclose(clean["history"][-1]["test_loss"], noisy["history"][-1]["test_loss"])
+
+
+def test_fake_samples_break_fedavg_and_median_resists():
+    attacked = {"attack": "fake_samples", "attack_fraction": 0.3}
+
+    plain = run_simulation(SimulationConfig(**SMALL, **attacked))
+    median = run_simulation(SimulationConfig(**SMALL, **attacked, defense="median"))
+
+    assert plain["final_accuracy"] < 0.5
+    assert median["final_accuracy"] > 0.9
+
+
+def test_attackers_are_recorded(tmp_path):
+    config = SimulationConfig(**SMALL, attack="label_flip", attack_fraction=0.4)
+    summary = run_simulation(config, tmp_path)
+
+    record = yaml.safe_load(
+        (tmp_path / summary["run_dir"].rsplit("/", 1)[-1] / "config.yaml").read_text()
+    )
+    assert len(record["attackers"]) == 2
+    assert record["config"]["attack"] == "label_flip"
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"attack_fraction": 0.2}, "need an attack"),
+        ({"defense": "median", "strategy": "fedadam"}, "fedavg or fedprox"),
+        ({"defense_options": {"beta": 0.1}}, "need a defense"),
+        ({"defense": "median", "defense_options": {"beta": 0.1}}, "do not apply"),
+        ({"attack": "backdoor"}, "Unknown attack"),
+    ],
+)
+def test_invalid_attack_and_defense_configs_are_rejected(options, message):
+    with pytest.raises(ValueError, match=message):
+        SimulationConfig(**options)
