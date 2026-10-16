@@ -1,130 +1,88 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "q-edge"
-version = "1.0.0"
-description = "Federated Hybrid Quantum-Neural Network Platform for Mobile-Edge Environments"
+dynamic = ["version"]
+description = "Testbed for federated learning with hybrid quantum-classical models and post-quantum secure aggregation"
 readme = "README.md"
-license = { text = "Apache-2.0" }
-authors = [
-    { name = "Ahmad Rasidi (Roy)", email = "roy@qedge.ai" }
-]
-maintainers = [
-    { name = "Q-Edge Research Team", email = "research@qedge.ai" }
-]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Ahmad Rasidi" }]
 keywords = [
-    "quantum-computing",
     "federated-learning",
     "quantum-machine-learning",
     "post-quantum-cryptography",
     "variational-quantum-circuits",
     "pennylane",
-    "nisq"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
-    "Typing :: Typed"
+    "Typing :: Typed",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
+# Lower bounds are the oldest versions the CI matrix resolves and tests.
 dependencies = [
-    # Core Quantum Computing
-    "pennylane>=0.33.0",
-    
-    # Machine Learning
-    "torch>=2.1.0",
-    "numpy>=1.24.0",
-    "scipy>=1.11.0",
-    "scikit-learn>=1.3.0",
-    
-    # Federated Learning
-    "flwr>=1.5.0",
-    "pysyft>=0.8.0",
-    
-    # Backend Framework
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
-    
-    # Async & Task Queue
-    "celery[redis]>=5.3.0",
-    "redis>=5.0.0",
-    "aio-pika>=9.3.0",
-    
-    # Post-Quantum Cryptography
-    "liboqs-python>=0.8.0",
-    "cryptography>=41.0.0",
-    
-    # Database
-    "sqlalchemy[asyncio]>=2.0.0",
-    "asyncpg>=0.29.0",
-    "alembic>=1.12.0",
-    
-    # Utilities
-    "python-dotenv>=1.0.0",
-    "structlog>=23.2.0",
-    "tenacity>=8.2.0",
-    "httpx>=0.25.0",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    
-    # Monitoring
-    "opentelemetry-api>=1.21.0",
-    "opentelemetry-sdk>=1.21.0",
-    "opentelemetry-instrumentation-fastapi>=0.42b0",
-    "prometheus-client>=0.19.0"
+    "cryptography>=46",
+    "numpy>=2.4",
+    "pennylane>=0.45",
+    "scipy>=1.17",
 ]
 
 [project.optional-dependencies]
+server = [
+    "celery[redis]>=5.6",
+    "fastapi>=0.138",
+    "pydantic>=2.14",
+    "python-jose[cryptography]>=3.5",
+    "starlette>=1.3",
+    "uvicorn>=0.49",
+]
+fl = [
+    "flwr>=1.32",
+    "torch>=2.14",
+]
+pqc = [
+    "liboqs-python>=0.16",
+]
+# Pure-Python ML-KEM/ML-DSA for tests and CI. Empty until qedge.crypto.backends.pure exists.
+pqc-pure = []
 dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "pytest-mock>=3.12.0",
-    "hypothesis>=6.88.0",
-    "mypy>=1.7.0",
-    "ruff>=0.1.6",
-    "black>=23.11.0",
-    "isort>=5.12.0",
-    "pre-commit>=3.5.0"
-]
-docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.5.0",
-    "mkdocstrings[python]>=0.24.0",
-    "mkdocs-mermaid2-plugin>=1.1.0"
-]
-benchmarks = [
-    "pytest-benchmark>=4.0.0",
-    "memory-profiler>=0.61.0",
-    "line-profiler>=4.1.0"
+    "httpx>=0.28",
+    "mypy>=1.19",
+    "pre-commit>=4",
+    "pytest>=9",
+    "pytest-asyncio>=1.4",
+    "pytest-cov>=7",
+    # Pinned to the version in .pre-commit-config.yaml so both format identically.
+    "ruff==0.17.1",
 ]
 
 [project.urls]
-Homepage = "https://github.com/qedge-ai/q-edge"
-Documentation = "https://docs.qedge.ai"
-Repository = "https://github.com/qedge-ai/q-edge"
-Issues = "https://github.com/qedge-ai/q-edge/issues"
-Changelog = "https://github.com/qedge-ai/q-edge/blob/main/CHANGELOG.md"
+Repository = "https://github.com/rasidi3112/Q-Edge"
+Issues = "https://github.com/rasidi3112/Q-Edge/issues"
 
 [project.scripts]
-qedge = "src.cli:main"
 qedge-api = "qedge.server.app:run_server"
-qedge-worker = "src.quantum.worker:run_worker"
+
+[tool.hatch.version]
+path = "src/qedge/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/qedge"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/qedge", "tests", "README.md", "LICENSE"]
 
 [tool.ruff]
 target-version = "py310"
@@ -157,7 +115,7 @@ profile = "black"
 line_length = 100
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
@@ -169,7 +127,6 @@ module = [
     "pennylane.*",
     "celery.*",
     "flwr.*",
-    "pysyft.*"
 ]
 ignore_missing_imports = true
 
