@@ -1,3 +1,10 @@
+"""Zero-noise extrapolation and measurement-error mitigation.
+
+The circuits in this repository run on noiseless simulators, so these methods
+have no noise to mitigate. With PennyLane 0.45,
+`ZeroNoiseExtrapolation.execute_at_scale` returns NaN for scale factors above 1.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -15,11 +22,22 @@ logger = logging.getLogger(__name__)
 
 
 class FoldingMethod(Enum):
+    """How a circuit is folded to amplify noise.
+
+    Giurgica-Tiron et al., "Digital zero noise extrapolation for quantum error
+    mitigation", 2020.
+    """
+
     GLOBAL = "global"  # Fold entire circuit: U → U·U†·U
     LOCAL = "local"  # Fold individual gates: G → G·G†·G
 
 
 class ExtrapolationMethod(Enum):
+    """Model fitted to (scale, value) pairs and evaluated at scale 0.
+
+    ADAPTIVE scores each candidate on the full-data fit, not by cross-validation.
+    """
+
     LINEAR = "linear"  # Linear extrapolation
     POLYNOMIAL = "polynomial"  # Polynomial fit
     EXPONENTIAL = "exponential"  # Exponential decay model
@@ -29,6 +47,13 @@ class ExtrapolationMethod(Enum):
 
 @dataclass
 class ZNEConfig:
+    """Scale factors and fit settings.
+
+    Raises:
+        ValueError: If fewer than 2 scale factors are given, any is below 1, or
+            they are not strictly increasing.
+    """
+
     scale_factors: Sequence[float] = field(default_factory=lambda: [1.0, 1.5, 2.0, 2.5, 3.0])
     folding_method: FoldingMethod = FoldingMethod.GLOBAL
     extrapolation_method: ExtrapolationMethod = ExtrapolationMethod.RICHARDSON
@@ -47,6 +72,14 @@ class ZNEConfig:
 
 
 class ZeroNoiseExtrapolation:
+    """Zero-noise extrapolation.
+
+    Temme et al., "Error mitigation for short-depth quantum circuits", 2017.
+
+    Args:
+        config: Scale factors and extrapolation method.
+    """
+
     def __init__(self, config: ZNEConfig) -> None:
         self.config = config
         self.extrapolation_history: list[dict[str, Any]] = []
@@ -61,6 +94,11 @@ class ZeroNoiseExtrapolation:
         tape: qml.tape.QuantumTape,
         scale_factor: float,
     ) -> qml.tape.QuantumTape:
+        """Return a tape implementing U (U^dagger U)^n plus a partial fold of the last gates.
+
+        The partial fold is rounded to whole gates, so the achieved scale factor can
+        differ from ``scale_factor``.
+        """
         if scale_factor == 1.0:
             return tape
 
@@ -104,6 +142,7 @@ class ZeroNoiseExtrapolation:
         tape: qml.tape.QuantumTape,
         scale_factor: float,
     ) -> qml.tape.QuantumTape:
+        """Return a tape where gates become G (G^dagger G)^k, assigned round-robin."""
         if scale_factor == 1.0:
             return tape
 
@@ -145,6 +184,7 @@ class ZeroNoiseExtrapolation:
         scale_factor: float,
         device: qml.Device,
     ) -> float:
+        """Fold ``circuit`` to ``scale_factor``, run it on ``device`` and return the mean."""
         if scale_factor == 1.0:
             # No folding needed
             return float(circuit(params))
@@ -274,6 +314,16 @@ class ZeroNoiseExtrapolation:
         scales: NDArray[np.float64],
         values: NDArray[np.float64],
     ) -> dict[str, Any]:
+        """Fit ``values`` against ``scales`` and return the estimate at scale 0.
+
+        If the exponential or Richardson fit fails, a polynomial or linear fit is used
+        and ``method_used`` still names the requested method.
+
+        Returns:
+            ``mitigated_value``, ``method_used``, ``confidence`` and the raw inputs.
+            ``confidence`` is 1 / (1 + std(residuals)) for linear and polynomial fits
+            and a fixed 0.8 otherwise.
+        """
         scales = np.array(scales)
         values = np.array(values)
 
@@ -322,6 +372,11 @@ class ZeroNoiseExtrapolation:
         params: Any,
         device: qml.Device | None = None,
     ) -> dict[str, Any]:
+        """Execute at every scale factor and extrapolate.
+
+        ``improvement`` is the distance between the mitigated value and the value at
+        the largest scale factor, not the unmitigated value at scale 1.
+        """
         if device is None:
             device = circuit.device
 
@@ -352,6 +407,18 @@ class ZeroNoiseExtrapolation:
 
 
 class MeasurementErrorMitigation:
+    """Readout-error mitigation from a full 2^n x 2^n calibration matrix.
+
+    Args:
+        n_qubits: Number of measured qubits; calibration runs ``2**n_qubits``
+            circuits.
+        method: ``"inverse"``, ``"least_squares"`` (non-negative, sums to 1) or
+            ``"iterative"``.
+
+    Raises:
+        ValueError: For an unknown ``method``.
+    """
+
     def __init__(
         self,
         n_qubits: int,
@@ -369,6 +436,7 @@ class MeasurementErrorMitigation:
         self._is_calibrated = False
 
     def calibrate(self, device: qml.Device) -> None:
+        """Prepare each basis state on ``device`` and store its measured probabilities."""
         n_states = 2**self.n_qubits
         self.calibration_matrix = np.zeros((n_states, n_states))
 
@@ -395,6 +463,11 @@ class MeasurementErrorMitigation:
         logger.info(f"Calibration complete. Readout fidelity: {fidelity:.4f}")
 
     def mitigate(self, measured_probs: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Correct a measured probability vector of length ``2**n_qubits``.
+
+        Raises:
+            RuntimeError: If `calibrate` has not been called.
+        """
         if not self._is_calibrated:
             raise RuntimeError("Must call calibrate() before mitigating")
 
@@ -436,6 +509,11 @@ class MeasurementErrorMitigation:
         return mitigated
 
     def get_readout_fidelity(self) -> float:
+        """Return the mean diagonal of the calibration matrix.
+
+        Raises:
+            RuntimeError: If `calibrate` has not been called.
+        """
         if not self._is_calibrated:
             raise RuntimeError("Must call calibrate() first")
 

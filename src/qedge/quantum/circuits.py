@@ -1,3 +1,5 @@
+"""Variational quantum circuits on PennyLane simulators."""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class EntanglementPattern(Enum):
+    """CNOT layout applied after each rotation layer."""
+
     LINEAR = "linear"  # Nearest-neighbor entanglement
     CIRCULAR = "circular"  # Ring topology
     FULL = "full"  # All-to-all connectivity
@@ -22,12 +26,28 @@ class EntanglementPattern(Enum):
 
 
 class AnsatzType(Enum):
+    """Rotation layer used in each variational layer.
+
+    STRONGLY_ENTANGLING applies one ``Rot`` per qubit followed by the configured
+    entanglement pattern; it is not ``qml.StronglyEntanglingLayers``.
+    HARDWARE_EFFICIENT applies ``VQCConfig.rotation_gates`` to every qubit.
+    """
+
     HARDWARE_EFFICIENT = "hardware_efficient"
     STRONGLY_ENTANGLING = "strongly_entangling"
 
 
 @dataclass
 class VQCConfig:
+    """Circuit shape and gate choices.
+
+    ``rotation_gates`` is only used by ``AnsatzType.HARDWARE_EFFICIENT``.
+
+    Raises:
+        ValueError: If ``n_qubits < 2``, ``n_layers < 1``, or a gate is not one of
+            RX, RY, RZ, Rot.
+    """
+
     n_qubits: int = 8
     n_layers: int = 4
     ansatz_type: AnsatzType = AnsatzType.STRONGLY_ENTANGLING
@@ -48,6 +68,15 @@ class VQCConfig:
 
 
 class VariationalQuantumCircuit:
+    """Angle-encoded variational circuit returning basis-state probabilities.
+
+    Args:
+        config: Circuit configuration.
+        device_name: PennyLane device name.
+        shots: Shots per evaluation; None for exact probabilities.
+        seed: Seed for parameter initialization.
+    """
+
     def __init__(
         self,
         config: VQCConfig,
@@ -204,6 +233,7 @@ class VariationalQuantumCircuit:
 
     @property
     def num_params(self) -> int:
+        """Total number of trainable angles."""
         return int(np.prod(self._param_shape))
 
     def forward(
@@ -211,6 +241,17 @@ class VariationalQuantumCircuit:
         features: NDArray[np.float64],
         params: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
+        """Evaluate the circuit.
+
+        Args:
+            features: 1-D array, zero-padded or truncated to ``n_qubits`` values; each
+                value is an RY angle in radians.
+            params: Angles with the shape of ``self.params``; defaults to
+                ``self.params``.
+
+        Returns:
+            Probabilities of shape ``(2**n_qubits,)``.
+        """
         if params is None:
             params = self.params
 
@@ -231,6 +272,7 @@ class VariationalQuantumCircuit:
         features_batch: NDArray[np.float64],
         params: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
+        """Apply `forward` to each row; returns shape ``(batch, 2**n_qubits)``."""
         results = []
         for features in features_batch:
             output = self.forward(features, params)
@@ -238,6 +280,7 @@ class VariationalQuantumCircuit:
         return np.array(results)
 
     def get_circuit_depth(self) -> int:
+        """Rough depth estimate from the config; ignores data re-uploading."""
         # Approximate depth calculation
         depth_per_layer = 2  # Rotation + entanglement
         if self.config.entanglement == EntanglementPattern.FULL:
@@ -246,6 +289,11 @@ class VariationalQuantumCircuit:
         return self.config.n_layers * depth_per_layer + 1  # +1 for encoding
 
     def get_gate_count(self) -> dict[str, int]:
+        """Gate counts by name, computed from the config rather than the built tape.
+
+        Encoding RY gates are counted once, ignoring re-uploading, and overwrite the
+        variational RY count when ``rotation_gates`` contains RY.
+        """
         gate_counts: dict[str, int] = {}
 
         # Rotation gates
@@ -276,6 +324,15 @@ class VariationalQuantumCircuit:
         return gate_counts
 
     def draw(self, style: str = "text") -> Any:
+        """Draw the circuit with all-zero features.
+
+        Args:
+            style: ``"text"`` returns a string; ``"mpl"`` returns a matplotlib figure
+                and needs matplotlib installed.
+
+        Raises:
+            ValueError: For any other style.
+        """
         # Create a sample execution for drawing
         sample_features = np.zeros(self.config.n_qubits)
 
@@ -286,6 +343,7 @@ class VariationalQuantumCircuit:
         raise ValueError(f"Unknown draw style {style!r}; expected 'text' or 'mpl'")
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize config and parameters to JSON-compatible types."""
         return {
             "config": {
                 "n_qubits": self.config.n_qubits,
@@ -301,6 +359,7 @@ class VariationalQuantumCircuit:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VariationalQuantumCircuit:
+        """Rebuild a circuit from `to_dict` output."""
         config = VQCConfig(
             n_qubits=data["config"]["n_qubits"],
             n_layers=data["config"]["n_layers"],

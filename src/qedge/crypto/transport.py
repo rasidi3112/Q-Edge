@@ -1,3 +1,13 @@
+"""Client-side encrypted message transport.
+
+Simulated by default. With ``use_simulation=True`` (the default) or without
+liboqs, the shared secret is ``sha256(server_public_key + session_id)``, both of
+which are public; the cipher is an HMAC-SHA256 keystream XOR; and ``verify``
+accepts any signature of 64 bytes or more. These paths provide neither
+confidentiality nor authenticity. ``decrypt_weights`` unpickles its input and
+must not be used on data from another party.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -17,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PQCSession:
+    """Per-session state shared by `PQCTransportLayer` methods."""
+
     session_id: str
     shared_secret: bytes
     server_public_key: bytes = b""
@@ -28,6 +40,14 @@ class PQCSession:
 
 
 class PQCTransportLayer:
+    """Encrypts, signs and frames messages for one client.
+
+    Args:
+        client_id: Identifier written into every message header.
+        use_simulation: Use the simulated primitives described in the module
+            docstring even when liboqs and ``cryptography`` are installed.
+    """
+
     # Constants
     NONCE_SIZE = 12
     TAG_SIZE = 16
@@ -36,7 +56,7 @@ class PQCTransportLayer:
     def __init__(
         self,
         client_id: str,
-        use_simulation: bool = True,  # True for development
+        use_simulation: bool = True,
     ) -> None:
         self.client_id = client_id
         self.use_simulation = use_simulation
@@ -81,6 +101,14 @@ class PQCTransportLayer:
         self,
         server_public_key: bytes,
     ) -> PQCSession:
+        """Derive a session key for ``server_public_key``.
+
+        With liboqs and ``use_simulation=False`` this runs Kyber1024 encapsulation but
+        drops the ciphertext, so the server cannot derive the same key.
+
+        Returns:
+            The new session, also stored on ``self.session``.
+        """
         session_id = f"{self.client_id}_{int(time.time())}_{secrets.token_hex(8)}"
 
         # Perform key encapsulation
@@ -137,6 +165,11 @@ class PQCTransportLayer:
         self,
         weights: list[NDArray],
     ) -> bytes:
+        """Pickle, zlib-compress and encrypt a list of arrays.
+
+        Raises:
+            RuntimeError: If no session has been established.
+        """
         # Serialize weights
         import pickle
 
@@ -154,6 +187,16 @@ class PQCTransportLayer:
         self,
         ciphertext: bytes,
     ) -> list[NDArray]:
+        """Reverse `encrypt_weights`.
+
+        Calls ``pickle.loads`` on the decrypted bytes, which runs code chosen by whoever
+        produced the ciphertext.
+
+        Raises:
+            RuntimeError: If no session has been established.
+            ValueError: If the simulated authentication tag does not match.
+            cryptography.exceptions.InvalidTag: If AES-GCM authentication fails.
+        """
         import pickle
         import zlib
 
@@ -244,6 +287,7 @@ class PQCTransportLayer:
         return keystream[:length]
 
     def sign(self, data: bytes) -> bytes:
+        """Sign ``data`` with Dilithium5, or with HMAC-SHA512 in simulated mode."""
         if self._oqs_available and not self.use_simulation:
             sig = self._oqs.Signature("Dilithium5", self._signing_private_key)
             return sig.sign(data)
@@ -261,6 +305,11 @@ class PQCTransportLayer:
         signature: bytes,
         public_key: bytes,
     ) -> bool:
+        """Check a signature.
+
+        In simulated mode this returns True for any signature of 64 bytes or more and
+        ignores ``data`` and ``public_key``.
+        """
         if self._oqs_available and not self.use_simulation:
             sig = self._oqs.Signature("Dilithium5")
             return sig.verify(data, signature, public_key)
@@ -273,6 +322,14 @@ class PQCTransportLayer:
         payload: bytes,
         message_type: str = "weights",
     ) -> bytes:
+        """Frame ``payload`` as ``header || encrypt(payload) || signature``.
+
+        The 104-byte header holds a timestamp, the message type, a per-session counter
+        and the client id. Receivers do not check the counter.
+
+        Raises:
+            RuntimeError: If no session has been established.
+        """
         if self.session is None:
             raise RuntimeError("No session established")
 
@@ -303,6 +360,17 @@ class PQCTransportLayer:
         self,
         message: bytes,
     ) -> tuple[bytes, dict[str, Any]]:
+        """Split, verify and decrypt a frame built by `create_authenticated_message`.
+
+        Assumes a 64-byte trailing signature and rejects timestamps more than 300 s from
+        local time. The counter is not checked, so replays inside that window pass.
+
+        Returns:
+            The decrypted payload and the parsed header fields.
+
+        Raises:
+            ValueError: If the frame is too short, expired, or fails verification.
+        """
         # Header is 104 bytes (4 + 32 + 4 + 64)
         header_size = 104
 
@@ -321,7 +389,7 @@ class PQCTransportLayer:
         if abs(current_time - timestamp) > self.TIMESTAMP_TOLERANCE:
             raise ValueError("Message timestamp expired")
 
-        # Find signature (assuming fixed 64-byte signature for simulation)
+        # Assumes a 64-byte signature; Dilithium5 signatures are 4595 bytes.
         signature_size = 64
         signature = message[-signature_size:]
         encrypted_payload = message[header_size:-signature_size]
@@ -347,6 +415,7 @@ class PQCTransportLayer:
         return payload, metadata
 
     def get_session_info(self) -> dict[str, Any]:
+        """Return session id, timestamps and message count, or ``{"status": "no_session"}``."""
         if self.session is None:
             return {"status": "no_session"}
 
@@ -359,7 +428,9 @@ class PQCTransportLayer:
         }
 
     def get_public_key(self) -> bytes:
+        """Return the client's signing public key as raw bytes."""
         return self._signing_public_key
 
     def get_public_key_base64(self) -> str:
+        """Return `get_public_key` encoded as base64 ASCII."""
         return base64.b64encode(self._signing_public_key).decode("ascii")

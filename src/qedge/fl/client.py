@@ -1,4 +1,12 @@
-#!/usr/bin/env python3
+"""Flower client for on-device training.
+
+Importing this module requires torch: the model classes subclass ``torch.nn``
+at import time. The ``--simulate`` entry point trains on Gaussian noise with
+uniformly random labels, so its losses say nothing about learning.
+``compress_gradients`` keeps the largest 10% of the full weights, not of the
+update, and zeroes the rest before they are sent.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -41,6 +49,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MobileDeviceConfig:
+    """Training and transport settings for one client device.
+
+    ``battery_aware`` caps the batch size at ``max_memory_mb // 4``.
+    """
+
     client_id: str = "mobile_client_001"
     server_address: str = "localhost:8080"
     local_epochs: int = 5
@@ -54,6 +67,14 @@ class MobileDeviceConfig:
 
 
 class SimpleMobileModel(nn.Module):
+    """MLP classifier with ReLU and dropout 0.2 after each hidden layer.
+
+    Args:
+        input_dim: Features per sample.
+        hidden_dims: Width of each hidden layer.
+        output_dim: Number of classes.
+    """
+
     def __init__(
         self,
         input_dim: int = 784,
@@ -80,10 +101,18 @@ class SimpleMobileModel(nn.Module):
         self.model = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return logits of shape ``(batch, output_dim)``."""
         return self.model(x)
 
 
 class MobileFlowerClient:
+    """Local trainer that exchanges weights with a Flower server.
+
+    Args:
+        config: Device settings.
+        model: Model to train; defaults to `SimpleMobileModel`.
+    """
+
     def __init__(
         self,
         config: MobileDeviceConfig,
@@ -123,6 +152,7 @@ class MobileFlowerClient:
         y: NDArray[np.int64],
         validation_split: float = 0.1,
     ) -> None:
+        """Shuffle with the global NumPy RNG and hold out ``validation_split`` for validation."""
         n_samples = len(X)
         n_val = int(n_samples * validation_split)
 
@@ -137,12 +167,18 @@ class MobileFlowerClient:
         logger.info(f"Set local data: {len(self._local_data[0])} train, {n_val} validation samples")
 
     def get_parameters(self) -> list[NDArray]:
+        """Return model parameters as NumPy arrays in ``model.parameters()`` order."""
         if self.model is None:
             return []
 
         return [param.detach().cpu().numpy() for param in self.model.parameters()]
 
     def set_parameters(self, parameters: list[NDArray]) -> None:
+        """Load arrays produced by `get_parameters`.
+
+        Raises:
+            ValueError: If the number of arrays does not match the model.
+        """
         if self.model is None:
             return
 
@@ -183,6 +219,12 @@ class MobileFlowerClient:
         self,
         epochs: int | None = None,
     ) -> dict[str, float]:
+        """Train for ``epochs`` (default ``config.local_epochs``) with Adam.
+
+        Returns:
+            Training loss, sample count, timing and validation metrics, or
+            ``{"error": ...}`` when no model or data is set.
+        """
         if self.model is None or self._local_data is None:
             return {"error": "Model or data not available"}
 
@@ -283,6 +325,11 @@ class MobileFlowerClient:
         self,
         parameters: list[NDArray],
     ) -> list[NDArray]:
+        """Keep the largest ``compression_ratio`` fraction of each array by magnitude.
+
+        The remaining entries are set to zero. Despite the name this is applied to
+        full weights, not to gradients or updates.
+        """
         if not self.config.compress_gradients:
             return parameters
 
@@ -308,6 +355,7 @@ class MobileFlowerClient:
         self,
         parameters: list[NDArray],
     ) -> bytes:
+        """Encrypt with the transport, or pickle without encryption when PQC is disabled."""
         if self.pqc_transport is None:
             # Fallback: serialize without encryption
             import pickle
@@ -320,6 +368,11 @@ class MobileFlowerClient:
         self,
         data: bytes,
     ) -> bytes:
+        """Sign ``data`` with the transport, or with HMAC when PQC is disabled.
+
+        The HMAC key is the client id, which is public, so the fallback authenticates
+        nothing.
+        """
         if self.pqc_transport is None:
             # Fallback: HMAC signature
             import hashlib
@@ -334,6 +387,7 @@ class MobileFlowerClient:
         return self.pqc_transport.sign(data)
 
     def start(self) -> None:
+        """Connect to ``config.server_address`` with the legacy ``flwr.client.start_client`` API."""
         if not FLOWER_AVAILABLE:
             logger.error("Flower not available. Cannot start FL client.")
             return
@@ -353,10 +407,13 @@ class MobileFlowerClient:
 
 
 class FlowerClientAdapter(NumPyClient):
+    """`NumPyClient` wrapper around a `MobileFlowerClient`."""
+
     def __init__(self, mobile_client: MobileFlowerClient) -> None:
         self.mobile_client = mobile_client
 
     def get_properties(self, config: dict[str, Scalar]) -> dict[str, Scalar]:
+        """Report the client id and feature flags to the server."""
         return {
             "client_id": self.mobile_client.config.client_id,
             "pqc_enabled": str(self.mobile_client.config.enable_pqc),
@@ -364,6 +421,7 @@ class FlowerClientAdapter(NumPyClient):
         }
 
     def get_parameters(self, config: dict[str, Scalar]) -> list[NDArray]:
+        """Return the wrapped client's parameters."""
         return self.mobile_client.get_parameters()
 
     def fit(
@@ -371,6 +429,7 @@ class FlowerClientAdapter(NumPyClient):
         parameters: list[NDArray],
         config: dict[str, Scalar],
     ) -> tuple[list[NDArray], int, dict[str, Scalar]]:
+        """Load global parameters, train locally and return the compressed parameters."""
         # Set global parameters
         self.mobile_client.set_parameters(parameters)
 
@@ -402,6 +461,7 @@ class FlowerClientAdapter(NumPyClient):
         parameters: list[NDArray],
         config: dict[str, Scalar],
     ) -> tuple[float, int, dict[str, Scalar]]:
+        """Return validation loss, sample count and accuracy for ``parameters``."""
         self.mobile_client.set_parameters(parameters)
 
         if self.mobile_client._val_data is None:
@@ -422,6 +482,7 @@ def run_simulation(
     n_rounds: int = 10,
     samples_per_client: int = 1000,
 ) -> None:
+    """Run FedAvg in-process over clients trained on random data."""
     logger.info(
         f"Starting FL simulation: {n_clients} clients, "
         f"{n_rounds} rounds, {samples_per_client} samples/client"
@@ -436,8 +497,8 @@ def run_simulation(
         )
         client = MobileFlowerClient(config)
 
-        # Generate synthetic data (non-IID simulation)
-        # Each client gets data with slight distribution shift
+        # Gaussian features with uniformly random labels, so there is nothing to
+        # learn; the per-client offset below shifts only the features.
         X = np.random.randn(samples_per_client, 784)
         y = np.random.randint(0, 10, samples_per_client)
 
@@ -496,6 +557,7 @@ def run_simulation(
 
 
 def main():
+    """Command-line entry point; both modes generate random local data."""
     parser = argparse.ArgumentParser(description="Q-Edge Mobile Federated Learning Client")
     parser.add_argument(
         "--server",

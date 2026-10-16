@@ -1,3 +1,10 @@
+"""Celery application and tasks.
+
+Task names do not match the keys in ``task_routes`` and ``beat_schedule``, so
+every task runs on the default queue and the scheduled cleanup task is not
+found.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -58,6 +65,8 @@ celery_app.conf.update(
 
 
 class QuantumTask(Task):
+    """Base task with retry settings and logging hooks."""
+
     abstract = True
     max_retries = 3
     retry_backoff = True
@@ -65,15 +74,18 @@ class QuantumTask(Task):
     retry_jitter = True
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
+        """Log the failure with its traceback."""
         logger.error(
             f"Quantum task {task_id} failed: {exc}",
             exc_info=einfo,
         )
 
     def on_success(self, retval, task_id, args, kwargs):
+        """Log completion."""
         logger.info(f"Quantum task {task_id} completed successfully")
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
+        """Log the retry."""
         logger.warning(f"Quantum task {task_id} retrying: {exc}")
 
 
@@ -84,6 +96,13 @@ def submit_quantum_aggregation(
     parameters: dict[str, Any],
     shots: int = 1024,
 ) -> dict[str, Any]:
+    """Run one aggregation round in a worker.
+
+    ``parameters`` may hold ``n_qubits`` (not bounded), ``vqc_layers`` and
+    ``updates``; without ``updates`` three random weight vectors are aggregated.
+    ``circuit_type`` and ``shots`` are only echoed. After the last retry, failures
+    are returned as ``{"status": "failed"}`` and the task itself succeeds.
+    """
     logger.info(f"Starting quantum aggregation: circuit={circuit_type}, shots={shots}")
 
     start_time = time.time()
@@ -115,7 +134,7 @@ def submit_quantum_aggregation(
                 for u in parameters["updates"]
             ]
         else:
-            # Demo updates
+            # No updates supplied: aggregate random weights.
             updates = [
                 LocalModelUpdate(
                     client_id=f"demo_client_{i}",
@@ -172,6 +191,11 @@ def execute_quantum_circuit(
     circuit_definition: dict[str, Any],
     shots: int = 1024,
 ) -> dict[str, Any]:
+    """Evaluate one exact circuit forward pass described by ``circuit_definition``.
+
+    ``shots`` is only echoed. Errors are returned as ``{"status": "failed"}`` and
+    the task itself succeeds.
+    """
     logger.info("Executing quantum circuit on the local simulator")
 
     start_time = time.time()
@@ -241,6 +265,7 @@ def process_federated_update(
     n_samples: int,
     local_loss: float,
 ) -> dict[str, Any]:
+    """Return statistics of a weight vector, or ``status="rejected"`` if it has NaN or Inf."""
     logger.info(f"Processing federated update from {client_id}")
 
     # Validate weights
@@ -276,9 +301,9 @@ def process_federated_update(
 
 @celery_app.task(name="cleanup_expired_jobs")
 def cleanup_expired_jobs() -> dict[str, Any]:
+    """No-op that reports zero cleaned jobs."""
     logger.info("Running job cleanup...")
 
-    # In production, would clean up Redis/database entries
     return {
         "status": "completed",
         "cleaned_jobs": 0,
@@ -287,6 +312,7 @@ def cleanup_expired_jobs() -> dict[str, Any]:
 
 
 def get_task_status(task_id: str) -> dict[str, Any]:
+    """Return the state, progress and result or error of a Celery task."""
     result = AsyncResult(task_id, app=celery_app)
 
     status_info = {
@@ -312,6 +338,7 @@ def get_task_status(task_id: str) -> dict[str, Any]:
 
 
 def run_worker():
+    """Start a worker that consumes the quantum, federated and default queues."""
     celery_app.worker_main(
         [
             "worker",

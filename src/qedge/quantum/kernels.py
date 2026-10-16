@@ -1,3 +1,12 @@
+"""Trainable quantum kernels and kernel-target alignment.
+
+For ZZ_FEATURE_MAP and PAULI_FEATURE_MAP the inverse pass in the kernel circuit
+negates the angles but keeps the gate order inside each layer, so it is not
+U(x)^dagger: k(x, x) can be well below 1 and the kernel matrix need not be
+positive semidefinite. ANGLE_EMBEDDING has one gate per qubit per layer and is
+not affected.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class FeatureMapType(Enum):
+    """Data-encoding layer of the kernel feature map."""
+
     ZZ_FEATURE_MAP = "zz_feature_map"  # Diagonal + entanglement
     PAULI_FEATURE_MAP = "pauli_feature_map"  # Pauli rotations
     ANGLE_EMBEDDING = "angle"  # Angle encoding
@@ -21,6 +32,8 @@ class FeatureMapType(Enum):
 
 @dataclass
 class QKAConfig:
+    """Kernel shape and alignment optimizer settings."""
+
     n_qubits: int = 8
     n_layers: int = 2
     feature_map_type: FeatureMapType = FeatureMapType.ZZ_FEATURE_MAP
@@ -31,6 +44,14 @@ class QKAConfig:
 
 
 class QuantumKernelAlignment:
+    """Kernel k(x1, x2) = P(|0...0>) after encoding x2 and then inverting x1.
+
+    Args:
+        config: Kernel configuration.
+        device_name: PennyLane device name.
+        seed: Seed for the feature-map parameters, drawn from U(-0.1, 0.1).
+    """
+
     def __init__(
         self,
         config: QKAConfig,
@@ -87,7 +108,7 @@ class QuantumKernelAlignment:
             # Apply U(x2) - encode second data point
             self._apply_feature_map(x2, params, adjoint=False)
 
-            # Apply U†(x1) - adjoint of first data point encoding
+            # Inverse pass for x1: negated angles, same gate order (see module docstring)
             self._apply_feature_map(x1, params, adjoint=True)
 
             # Return all probabilities - kernel value is |0...0⟩ probability
@@ -175,6 +196,7 @@ class QuantumKernelAlignment:
         x2: NDArray[np.float64],
         params: NDArray[np.float64] | None = None,
     ) -> float:
+        """Return k(x1, x2) in [0, 1]; inputs are zero-padded or truncated to ``n_qubits``."""
         if params is None:
             params = self.feature_map_params
 
@@ -188,6 +210,11 @@ class QuantumKernelAlignment:
         Y: NDArray[np.float64] | None = None,
         params: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
+        """Return K[i, j] = k(X[i], Y[j]) with shape ``(len(X), len(Y))``.
+
+        With ``Y=None`` the symmetric Gram matrix of X is computed from n(n+1)/2 circuit
+        evaluations.
+        """
         if params is None:
             params = self.feature_map_params
 
@@ -214,6 +241,10 @@ class QuantumKernelAlignment:
         K1: NDArray[np.float64],
         K2: NDArray[np.float64],
     ) -> float:
+        """Return <K1, K2>_F / (||K1||_F ||K2||_F), or 0.0 if either norm is below 1e-10.
+
+        Cristianini et al., "On Kernel-Target Alignment", NIPS 2001.
+        """
         # Frobenius inner product
         inner_product = np.sum(K1 * K2)
 
@@ -232,6 +263,23 @@ class QuantumKernelAlignment:
         y: NDArray[np.float64],
         kernel_type: str = "rbf",
     ) -> dict[str, Any]:
+        """Fit feature-map parameters to maximize centered alignment with a target kernel.
+
+        Gradients are finite differences, so each optimizer iteration costs roughly
+        ``(n_params + 1) * n_samples**2 / 2`` circuit evaluations.
+
+        Args:
+            X: Inputs of shape ``(n_samples, n_features)``.
+            y: Labels, used by the ``"ideal"`` target.
+            kernel_type: Target kernel: ``"ideal"`` (1 where labels match), ``"rbf"``
+                (median-distance bandwidth) or ``"linear"``.
+
+        Returns:
+            Optimizer status, final alignment, iteration count and parameters.
+
+        Raises:
+            ValueError: For an unknown ``kernel_type``.
+        """
         if kernel_type not in ("ideal", "rbf", "linear"):
             raise ValueError(
                 f"Unknown kernel_type {kernel_type!r}; expected 'ideal', 'rbf' or 'linear'"
@@ -318,6 +366,7 @@ class QuantumKernelAlignment:
         X_val: NDArray[np.float64] | None = None,
         y_val: NDArray[np.float64] | None = None,
     ) -> dict[str, Any]:
+        """Align to the ideal kernel; optionally report 1-NN validation accuracy in kernel space."""
         # First align to ideal kernel
         result = self.align_to_target(X_train, y_train, kernel_type="ideal")
 
@@ -341,6 +390,13 @@ class QuantumKernelAlignment:
         self,
         n_samples: int = 1000,
     ) -> float:
+        """Score in (0, 1] from the KL divergence of sampled kernel values to a Haar density.
+
+        Pairs of random inputs are sampled, not random parameters, so this measures the
+        spread of the feature map over inputs. Sim et al. ("Expressibility and
+        entangling capability of parameterized quantum circuits", 2019) sample
+        parameters instead.
+        """
         # Generate random input pairs
         fidelities = []
 
@@ -373,6 +429,7 @@ class QuantumKernelAlignment:
         return float(expressibility)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize config, parameters and optimization history."""
         return {
             "config": {
                 "n_qubits": self.config.n_qubits,
@@ -386,6 +443,7 @@ class QuantumKernelAlignment:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> QuantumKernelAlignment:
+        """Rebuild a kernel from `to_dict` output."""
         config = QKAConfig(
             n_qubits=data["config"]["n_qubits"],
             n_layers=data["config"]["n_layers"],

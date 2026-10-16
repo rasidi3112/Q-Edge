@@ -1,3 +1,12 @@
+"""JWT handling, a PQC provider and a request middleware.
+
+Without liboqs (the default install) `PQCProvider` is simulated: keys are random
+bytes, the encapsulated secret is derived from the public key alone, and
+verification accepts any signature of 32 bytes or more. `PQCAuthMiddleware`
+does not verify signatures. JWTs fall back to a hardcoded secret when
+``JWT_SECRET_KEY`` is unset.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -21,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 # PQC Algorithm Constants
 class PQCAlgorithm(Enum):
+    """Algorithm identifiers mapped to the pre-standard liboqs names (Kyber, Dilithium)."""
+
     KYBER_512 = "kyber512"
     KYBER_768 = "kyber768"
     KYBER_1024 = "kyber1024"
@@ -31,6 +42,8 @@ class PQCAlgorithm(Enum):
 
 @dataclass
 class PQCKeyPair:
+    """Key pair with its algorithm and creation time."""
+
     algorithm: PQCAlgorithm
     public_key: bytes
     private_key: bytes
@@ -39,11 +52,19 @@ class PQCKeyPair:
 
 @dataclass
 class EncapsulatedKey:
+    """KEM ciphertext and the shared secret it encapsulates."""
+
     ciphertext: bytes
     shared_secret: bytes
 
 
 class PQCProvider:
+    """KEM and signature operations via liboqs, with a simulated fallback.
+
+    Args:
+        use_simulation: Use the simulated path even when liboqs is installed.
+    """
+
     def __init__(self, use_simulation: bool = False) -> None:
         self._use_simulation = use_simulation
         self._oqs_available = False
@@ -57,14 +78,15 @@ class PQCProvider:
             logger.info("Using liboqs for PQC operations")
         except ImportError:
             logger.warning(
-                "liboqs not available, using simulated PQC. "
-                "Install liboqs-python for production use."
+                "liboqs not available: using SIMULATED PQC, which provides no security. "
+                "Install liboqs-python for real Kyber/Dilithium."
             )
 
     def generate_keypair(
         self,
         algorithm: PQCAlgorithm = PQCAlgorithm.KYBER_1024,
     ) -> PQCKeyPair:
+        """Generate a key pair; simulated keys are random bytes of the real sizes."""
         if self._oqs_available and not self._use_simulation:
             return self._generate_keypair_oqs(algorithm)
         else:
@@ -116,6 +138,7 @@ class PQCProvider:
         public_key: bytes,
         algorithm: PQCAlgorithm = PQCAlgorithm.KYBER_1024,
     ) -> EncapsulatedKey:
+        """Encapsulate a secret; the simulated secret is sha256(public_key + constant)."""
         if self._oqs_available and not self._use_simulation:
             return self._encapsulate_oqs(public_key, algorithm)
         else:
@@ -161,6 +184,7 @@ class PQCProvider:
         ciphertext: bytes,
         keypair: PQCKeyPair,
     ) -> bytes:
+        """Recover the shared secret; the simulated path ignores ``ciphertext``."""
         if self._oqs_available and not self._use_simulation:
             return self._decapsulate_oqs(ciphertext, keypair)
         else:
@@ -179,6 +203,7 @@ class PQCProvider:
         message: bytes,
         keypair: PQCKeyPair,
     ) -> bytes:
+        """Sign ``message``; simulated signatures are HMAC-SHA256 over 32 key bytes."""
         if self._oqs_available and not self._use_simulation:
             return self._sign_oqs(message, keypair)
         else:
@@ -190,7 +215,7 @@ class PQCProvider:
         return sig.sign(message)
 
     def _sign_simulated(self, message: bytes, keypair: PQCKeyPair) -> bytes:
-        # Use HMAC as a placeholder for Dilithium signature
+        # Simulated: HMAC-SHA256, not a public-key signature.
         return hmac.new(keypair.private_key[:32], message, hashlib.sha256).digest()
 
     def verify(
@@ -200,6 +225,7 @@ class PQCProvider:
         public_key: bytes,
         algorithm: PQCAlgorithm = PQCAlgorithm.DILITHIUM_5,
     ) -> bool:
+        """Verify a signature; the simulated path accepts any signature of 32+ bytes."""
         if self._oqs_available and not self._use_simulation:
             return self._verify_oqs(message, signature, public_key, algorithm)
         else:
@@ -222,7 +248,7 @@ class PQCProvider:
         signature: bytes,
         public_key: bytes,
     ) -> bool:
-        # In simulation, just check signature length
+        # Simulated: accepts any signature of 32 bytes or more.
         return len(signature) >= 32
 
     def _get_oqs_algorithm_name(self, algorithm: PQCAlgorithm) -> str:
@@ -243,6 +269,12 @@ def create_jwt_token(
     session_id: str,
     expires_delta: timedelta | None = None,
 ) -> str:
+    """Issue a JWT with ``client_id``, ``session_id``, ``iat`` and ``exp``.
+
+    Reads ``JWT_SECRET_KEY``, ``JWT_ALGORITHM`` (default HS256) and
+    ``JWT_EXPIRATION_MINUTES`` (default 30). The secret falls back to a hardcoded
+    development value.
+    """
     secret_key = os.getenv("JWT_SECRET_KEY", "development-secret-key-change-me")
     algorithm = os.getenv("JWT_ALGORITHM", "HS256")
 
@@ -264,6 +296,11 @@ def create_jwt_token(
 
 
 def verify_jwt_token(token: str) -> dict[str, Any]:
+    """Decode and verify a token from `create_jwt_token`.
+
+    Raises:
+        HTTPException: 401 if the signature or expiry check fails.
+    """
     secret_key = os.getenv("JWT_SECRET_KEY", "development-secret-key-change-me")
     algorithm = os.getenv("JWT_ALGORITHM", "HS256")
 
@@ -280,6 +317,12 @@ def verify_jwt_token(token: str) -> dict[str, Any]:
 
 
 class PQCAuthMiddleware(BaseHTTPMiddleware):
+    """Checks ``X-PQC-Timestamp`` and adds ``X-PQC-*`` headers to every response.
+
+    It does not verify signatures and does not reject requests that lack the
+    headers, so ``X-PQC-Protected: true`` carries no meaning.
+    """
+
     def __init__(self, app, excluded_paths: list | None = None) -> None:
         super().__init__(app)
         self.pqc_provider = PQCProvider()
@@ -293,6 +336,7 @@ class PQCAuthMiddleware(BaseHTTPMiddleware):
         ]
 
     async def dispatch(self, request: Request, call_next):
+        """Reject requests whose ``X-PQC-Timestamp`` is more than 300 s off; pass all others."""
         # Skip excluded paths
         if request.url.path in self.excluded_paths:
             return await call_next(request)
@@ -315,7 +359,7 @@ class PQCAuthMiddleware(BaseHTTPMiddleware):
                         content={"detail": "Request timestamp expired"},
                     )
 
-                # Log PQC verification (actual verification would use stored public key)
+                # The signature is not verified; only its length is logged.
                 logger.debug(
                     f"PQC request from {pqc_client_id}, signature length: {len(pqc_signature)}"
                 )

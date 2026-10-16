@@ -1,3 +1,13 @@
+"""Server-side aggregation of client weight vectors with an optional circuit step.
+
+With ``use_quantum=True``, `QuantumGlobalAggregator.aggregate` replaces
+``1 - classical_weight`` of every weight (30% by default) with values in [-1, 0]
+derived from the log-probabilities of a variational circuit evaluated on
+``n_qubits`` summary statistics of the aggregate. FEDPROX and FEDOPT are not the
+published algorithms: FEDPROX mixes the new aggregate with the previous one on
+the server, and FEDOPT takes a fixed step of 0.01 toward the FedAvg result.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class AggregationStrategy(Enum):
+    """Server-side rule for combining client weights (see the module docstring)."""
+
     FEDAVG = "fedavg"  # Weighted average by sample count
     FEDPROX = "fedprox"  # FedAvg with proximal regularization
     FEDOPT = "fedopt"  # Server-side optimization (FedAdam, FedYogi)
@@ -25,6 +37,8 @@ class AggregationStrategy(Enum):
 
 @dataclass
 class LocalModelUpdate:
+    """One client's flattened weights for a round, with its claimed sample count and loss."""
+
     client_id: str
     weights: NDArray[np.float64]
     gradients: NDArray[np.float64] | None = None
@@ -35,6 +49,8 @@ class LocalModelUpdate:
 
 @dataclass
 class GlobalModelState:
+    """Result of one aggregation round."""
+
     weights: NDArray[np.float64]
     round_number: int
     quantum_embedding: NDArray[np.float64] | None = None
@@ -45,6 +61,12 @@ class GlobalModelState:
 
 @dataclass
 class QuantumAggregatorConfig:
+    """Configuration for `QuantumGlobalAggregator`.
+
+    ``classical_weight`` is the share of the classical aggregate kept when
+    ``aggregate`` runs with ``use_quantum=True``.
+    """
+
     n_qubits: int = 8
     vqc_layers: int = 4
     qka_layers: int = 2
@@ -56,6 +78,13 @@ class QuantumAggregatorConfig:
 
 
 class QuantumGlobalAggregator:
+    """Aggregates `LocalModelUpdate` objects round by round.
+
+    Args:
+        config: Aggregation and circuit settings.
+        seed: Seed for circuit and kernel parameter initialization.
+    """
+
     def __init__(
         self,
         config: QuantumAggregatorConfig,
@@ -163,7 +192,7 @@ class QuantumGlobalAggregator:
         prev_global = self.global_state.weights
         pseudo_gradient = aggregated_update - prev_global
 
-        # Simplified Adam update (would need state for full Adam)
+        # Fixed-step move toward the FedAvg result; no optimizer state, not Adam.
         learning_rate = 0.01
         updated = prev_global + learning_rate * pseudo_gradient
 
@@ -260,12 +289,9 @@ class QuantumGlobalAggregator:
         if self.zne is None:
             return circuit_output
 
-        # Note: Full ZNE would require multiple circuit executions
-        # This is a simplified version using the existing output
-
-        # Apply simple noise model correction
-        # In practice, ZNE.mitigate() would handle this
-        mitigated = circuit_output * 1.05  # Simple correction factor
+        # Not error mitigation: scaling by 1.05 and renormalizing returns the input
+        # distribution unchanged. Nothing calls this method.
+        mitigated = circuit_output * 1.05
 
         # Normalize probabilities
         if np.sum(mitigated) > 0:
@@ -278,6 +304,22 @@ class QuantumGlobalAggregator:
         updates: Sequence[LocalModelUpdate],
         use_quantum: bool = True,
     ) -> GlobalModelState:
+        """Run one aggregation round.
+
+        Args:
+            updates: Client updates. Weight arrays must share one shape; this is not
+                checked.
+            use_quantum: Mix in the circuit-derived values and compute an
+                ``n_clients x n_clients`` quantum kernel for the metrics. The kernel
+                costs O(n_clients^2) circuit evaluations and does not change the
+                weights.
+
+        Returns:
+            The new global state, also stored on ``self.global_state``.
+
+        Raises:
+            ValueError: If ``updates`` is empty.
+        """
         if len(updates) == 0:
             raise ValueError("No updates provided for aggregation")
 
@@ -360,6 +402,11 @@ class QuantumGlobalAggregator:
         labels: NDArray[np.float64],
         n_epochs: int = 10,
     ) -> dict[str, Any]:
+        """Align the kernel to ``labels`` and perturb the circuit parameters.
+
+        The circuit update is Gaussian noise (sigma 0.01) scaled by
+        ``quantum_learning_rate``, not a gradient step.
+        """
         weights_list = [u.weights for u in updates]
         compressed = np.array([self._compress_weights(w) for w in weights_list])
 
@@ -372,14 +419,18 @@ class QuantumGlobalAggregator:
             "vqc_params_updated": True,
         }
 
-        # Simple VQC parameter update based on gradient
-        # In practice, would use proper gradient descent
+        # Random perturbation, not a gradient step.
         gradient_estimate = self._rng.normal(0, 0.01, self.vqc.params.shape)
         self.vqc.params -= self.config.quantum_learning_rate * gradient_estimate
 
         return training_results
 
     def get_aggregation_metrics(self) -> dict[str, Any]:
+        """Summarize completed rounds.
+
+        Once a round has completed, every call evaluates 100 kernel circuits for the
+        expressibility estimate.
+        """
         if len(self.round_history) == 0:
             return {"message": "No aggregation rounds completed"}
 
@@ -393,6 +444,7 @@ class QuantumGlobalAggregator:
         }
 
     def save_state(self, filepath: str) -> None:
+        """Write config, circuit parameters and the latest global weights to JSON."""
         import json
 
         state = {
@@ -417,6 +469,7 @@ class QuantumGlobalAggregator:
 
     @classmethod
     def load_state(cls, filepath: str) -> QuantumGlobalAggregator:
+        """Rebuild an aggregator from `save_state` output; round history is not restored."""
         import json
 
         state = json.loads(Path(filepath).read_text())
