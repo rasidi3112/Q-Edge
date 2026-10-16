@@ -17,5 +17,5 @@ def test_app_instances_do_not_share_enrolled_clients(settings, tmp_path, enroll,
     with TestClient(create_app(settings)) as first, TestClient(create_app(other)) as second:
         headers = login(first, "hospital_A", secret_key)
 
-        assert first.get("/fl/global-model", headers=headers).status_code == 404
-        assert second.get("/fl/global-model", headers=headers).status_code == 401
+        assert first.get("/rounds", headers=headers).status_code == 200
+        assert second.get("/rounds", headers=headers).status_code == 401

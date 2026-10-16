@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from qedge.crypto.sign import Signer
 from qedge.crypto.transport import MAX_CLIENT_ID_BYTES
+from qedge.protocol import challenge_message
 from qedge.server.db import Challenge, Client
 
 if TYPE_CHECKING:
@@ -33,7 +34,6 @@ logger = logging.getLogger(__name__)
 SCOPES = ("client", "admin")
 NONCE_BYTES = 32
 CHALLENGE_TTL_SECONDS = 60
-_CHALLENGE_LABEL = b"qedge/auth/v1"
 
 
 class TokenError(Exception):
@@ -183,12 +183,6 @@ def enroll_client(
     session.add(Client(id=client_id, public_key=public_key, scope=scope, created_at=time.time()))
     session.commit()
     return True
-
-
-def challenge_message(nonce: bytes, client_id: str, server_id: str) -> bytes:
-    """Bytes a client signs to answer a login challenge."""
-    parts = [nonce, client_id.encode(), server_id.encode()]
-    return _CHALLENGE_LABEL + b"".join(len(part).to_bytes(2, "big") + part for part in parts)
 
 
 def issue_challenge(session: Session, client_id: str, *, now: float) -> bytes:

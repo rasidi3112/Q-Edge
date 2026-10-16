@@ -3,13 +3,9 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
+from qedge.protocol import challenge_message
 from qedge.server.app import create_app
-from qedge.server.auth import (
-    AuthenticationFailed,
-    challenge_message,
-    issue_challenge,
-    redeem_challenge,
-)
+from qedge.server.auth import AuthenticationFailed, issue_challenge, redeem_challenge
 from qedge.server.db import Database
 
 

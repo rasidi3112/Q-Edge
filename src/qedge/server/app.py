@@ -1,46 +1,47 @@
 """FastAPI coordination server.
 
 Clients are enrolled by an admin and log in with an ML-DSA challenge-response
-(see `qedge.server.auth`). Weight submissions are not validated yet.
+(`qedge.server.auth`). Updates travel inside the encrypted transport from
+`qedge.crypto.transport`: a client opens a session with
+``POST /transport/handshake`` and sends each update as a sealed DATA frame to
+``POST /rounds/{id}/updates``. Rounds and aggregation live in
+`qedge.server.rounds`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from typing import Any, Literal
 
-import numpy as np
-from fastapi import (
-    APIRouter,
-    Depends,
-    FastAPI,
-    HTTPException,
-    Request,
-    Response,
-    status,
-)
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from qedge import __version__
-from qedge.crypto.backends import get_signer
+from qedge.crypto.backends import get_kem, get_signer
 from qedge.crypto.errors import KeyStoreError
 from qedge.crypto.keys import ServerKeys, fingerprint, load_server_keys
 from qedge.crypto.sign import Signer
-from qedge.fl.aggregator import (
-    LocalModelUpdate,
-    QuantumAggregatorConfig,
-    QuantumGlobalAggregator,
+from qedge.crypto.transport import (
+    AuthenticationError,
+    ExpiredFrameError,
+    FrameError,
+    ReplayError,
+    TransportError,
 )
+from qedge.fl.weights import ModelSpec, TensorSpec
 from qedge.server.auth import (
     CHALLENGE_TTL_SECONDS,
     AuthenticationFailed,
@@ -51,14 +52,22 @@ from qedge.server.auth import (
     issue_challenge,
     redeem_challenge,
 )
-from qedge.server.db import Client, Database
-from qedge.server.settings import Settings
-from qedge.server.worker import (
-    get_task_status,
-    submit_quantum_aggregation,
+from qedge.server.channels import SessionStore
+from qedge.server.db import BlobStore, Client, Database
+from qedge.server.rounds import (
+    DuplicateSubmissionError,
+    InvalidSubmissionError,
+    RoundNotFoundError,
+    RoundNotOpenError,
+    RoundService,
 )
+from qedge.server.settings import Settings
+from qedge.server.worker import get_task_status, submit_quantum_aggregation
 
 logger = logging.getLogger(__name__)
+
+OCTET_STREAM = "application/octet-stream"
+MAX_HELLO_BYTES = 64 * 1024
 
 
 class ChallengeRequest(BaseModel):
@@ -108,25 +117,20 @@ class ClientInfo(BaseModel):
     fingerprint: str
 
 
-class ModelWeightsSubmission(BaseModel):
-    """A client's flattened weights for one round."""
+class TensorSpecModel(BaseModel):
+    """One tensor of a round's model spec."""
 
-    client_id: str
-    round_number: int
-    weights: list[float]
-    n_samples: int
-    local_loss: float
-    encrypted_metadata: str | None = None
+    name: str = Field(min_length=1, max_length=256)
+    shape: list[int] = Field(max_length=8)
+    dtype: Literal["float32", "float64"]
 
 
-class AggregationResult(BaseModel):
-    """Global weights and metrics after an aggregation round."""
+class RoundRequest(BaseModel):
+    """Open a round for a model spec."""
 
-    round_number: int
-    global_weights: list[float]
-    quantum_embedding: list[float] | None = None
-    metrics: dict[str, Any]
-    timestamp: str
+    tensors: list[TensorSpecModel] = Field(min_length=1, max_length=1024)
+    min_clients: int = Field(ge=1, le=10_000)
+    deadline_seconds: float | None = Field(None, gt=0, le=7 * 86_400)
 
 
 class QuantumJobSubmission(BaseModel):
@@ -148,11 +152,10 @@ class QuantumJobStatus(BaseModel):
 
 
 class HealthCheckResponse(BaseModel):
-    """Service status; the ``celery`` entry is not checked."""
+    """Service status; ``database`` is checked with a query on every call."""
 
     status: str
     version: str
-    timestamp: str
     services: dict[str, str]
 
 
@@ -172,12 +175,12 @@ class ServerState:
     """Per-application state created by the lifespan handler."""
 
     settings: Settings
-    aggregator: QuantumGlobalAggregator
     keys: ServerKeys
     signer: Signer
     tokens: TokenIssuer
     db: Database
-    current_round_updates: list[LocalModelUpdate] = field(default_factory=list)
+    rounds: RoundService
+    sessions: SessionStore
 
 
 @dataclass(frozen=True)
@@ -202,61 +205,14 @@ def get_state(request: Request) -> ServerState:
 
 
 router = APIRouter()
-
-# Security
 security = HTTPBearer(auto_error=False)
-
-
-# Health endpoints
-@router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
-async def health_check(state: ServerState = Depends(get_state)) -> HealthCheckResponse:
-    """Report service status."""
-    services = {
-        "api": "healthy",
-        "quantum_aggregator": "healthy" if state.aggregator else "unavailable",
-        "celery": "healthy",  # Not checked
-    }
-
-    overall_status = "healthy" if all(s == "healthy" for s in services.values()) else "degraded"
-
-    return HealthCheckResponse(
-        status=overall_status,
-        version=__version__,
-        timestamp=datetime.utcnow().isoformat(),
-        services=services,
-    )
-
-
-@router.get("/crypto/keys", response_model=ServerKeysResponse, tags=["Crypto"])
-async def get_server_keys(state: ServerState = Depends(get_state)) -> ServerKeysResponse:
-    """Return the server's KEM and ML-DSA public keys for clients to pin."""
-    keys = state.keys
-    return ServerKeysResponse(
-        kem_algorithm=keys.kem_algorithm,
-        kem_public_key=base64.b64encode(keys.kem_public_key).decode("ascii"),
-        kem_fingerprint=fingerprint(keys.kem_public_key),
-        signature_algorithm=keys.signature_algorithm,
-        signing_public_key=base64.b64encode(keys.signing_public_key).decode("ascii"),
-        signing_fingerprint=fingerprint(keys.signing_public_key),
-    )
-
-
-@router.get("/", tags=["Health"])
-async def root() -> dict[str, str]:
-    """Return the API name, version and docs path."""
-    return {
-        "name": "Q-Edge API",
-        "version": __version__,
-        "description": "Federated Hybrid Quantum-Neural Network Platform",
-        "documentation": "/docs",
-    }
 
 
 def _b64decode(value: str, what: str) -> bytes:
     try:
         return base64.b64decode(value, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{what} is not base64") from exc
+        raise HTTPException(422, f"{what} is not base64") from exc
 
 
 def _authenticate(
@@ -281,7 +237,7 @@ def _authenticate(
     return Principal(claims.subject, claims.scope)
 
 
-async def require_client(
+def require_client(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     state: ServerState = Depends(get_state),
 ) -> Principal:
@@ -289,7 +245,7 @@ async def require_client(
     return _authenticate(credentials, state, "client", "admin")
 
 
-async def require_admin(
+def require_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     state: ServerState = Depends(get_state),
 ) -> Principal:
@@ -297,8 +253,58 @@ async def require_admin(
     return _authenticate(credentials, state, "admin")
 
 
+def _transport_http_error(exc: TransportError) -> HTTPException:
+    if isinstance(exc, ReplayError):
+        return HTTPException(status.HTTP_409_CONFLICT, f"Frame rejected: {exc}")
+    if isinstance(exc, AuthenticationError):
+        return HTTPException(status.HTTP_401_UNAUTHORIZED, f"Frame rejected: {exc}")
+    if isinstance(exc, (FrameError, ExpiredFrameError)):
+        return HTTPException(status.HTTP_400_BAD_REQUEST, f"Frame rejected: {exc}")
+    return HTTPException(status.HTTP_400_BAD_REQUEST, "Frame rejected")
+
+
+def _check_length(request: Request, limit: int) -> None:
+    length = request.headers.get("content-length")
+    if length is not None and length.isdigit() and int(length) > limit:
+        raise HTTPException(413, f"Body exceeds {limit} bytes")
+
+
+@router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
+def health_check(state: ServerState = Depends(get_state)) -> HealthCheckResponse:
+    """Report whether the database answers; crypto keys are checked at startup."""
+    try:
+        with state.db.session() as session:
+            session.execute(text("SELECT 1"))
+        database = "healthy"
+    except SQLAlchemyError:
+        database = "unavailable"
+    services = {"database": database, "crypto": state.settings.crypto_backend}
+    overall = "healthy" if database == "healthy" else "degraded"
+    return HealthCheckResponse(status=overall, version=__version__, services=services)
+
+
+@router.get("/crypto/keys", response_model=ServerKeysResponse, tags=["Crypto"])
+def get_server_keys(state: ServerState = Depends(get_state)) -> ServerKeysResponse:
+    """Return the server's KEM and ML-DSA public keys for clients to pin."""
+    keys = state.keys
+    return ServerKeysResponse(
+        kem_algorithm=keys.kem_algorithm,
+        kem_public_key=base64.b64encode(keys.kem_public_key).decode("ascii"),
+        kem_fingerprint=fingerprint(keys.kem_public_key),
+        signature_algorithm=keys.signature_algorithm,
+        signing_public_key=base64.b64encode(keys.signing_public_key).decode("ascii"),
+        signing_fingerprint=fingerprint(keys.signing_public_key),
+    )
+
+
+@router.get("/", tags=["Health"])
+def root() -> dict[str, str]:
+    """Return the API name, version and docs path."""
+    return {"name": "Q-Edge API", "version": __version__, "documentation": "/docs"}
+
+
 @router.post("/auth/challenge", response_model=ChallengeResponse, tags=["Authentication"])
-async def create_challenge(
+def create_challenge(
     request: ChallengeRequest, state: ServerState = Depends(get_state)
 ) -> ChallengeResponse:
     """Return a single-use nonce for ``client_id``."""
@@ -312,9 +318,7 @@ async def create_challenge(
 
 
 @router.post("/auth/token", response_model=TokenResponse, tags=["Authentication"])
-async def create_token(
-    request: TokenRequest, state: ServerState = Depends(get_state)
-) -> TokenResponse:
+def create_token(request: TokenRequest, state: ServerState = Depends(get_state)) -> TokenResponse:
     """Exchange a signed challenge for an access token; 401 on any failure."""
     nonce = _b64decode(request.nonce, "nonce")
     signature = _b64decode(request.signature, "signature")
@@ -336,179 +340,35 @@ async def create_token(
     return TokenResponse(access_token=token, expires_in=expires_in, scope=client.scope)
 
 
-# Federated Learning endpoints
 @router.post(
-    "/fl/submit-weights",
-    response_model=dict[str, Any],
-    tags=["Federated Learning"],
+    "/transport/handshake",
+    tags=["Transport"],
+    response_class=Response,
+    responses={200: {"content": {OCTET_STREAM: {}}}},
 )
-async def submit_weights(
-    submission: ModelWeightsSubmission,
+def handshake(
+    request: Request,
+    hello: bytes = Body(media_type=OCTET_STREAM),
     principal: Principal = Depends(require_client),
     state: ServerState = Depends(get_state),
-) -> dict[str, Any]:
-    """Queue a client's weights; shape, round and sample count are not validated."""
-    if submission.client_id != principal.client_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Client ID mismatch",
-        )
+) -> Response:
+    """Accept a HELLO frame and return the ACCEPT frame (both raw bytes)."""
+    _check_length(request, MAX_HELLO_BYTES)
 
-    logger.info(f"Received weights from {submission.client_id} for round {submission.round_number}")
+    def lookup(client_id: str) -> bytes | None:
+        with state.db.session() as session:
+            client = session.get(Client, client_id)
+        return None if client is None else client.public_key
 
-    # Create local update object
-    update = LocalModelUpdate(
-        client_id=submission.client_id,
-        weights=np.array(submission.weights),
-        n_samples=submission.n_samples,
-        local_loss=submission.local_loss,
-    )
-
-    state.current_round_updates.append(update)
-
-    return {
-        "status": "accepted",
-        "round_number": submission.round_number,
-        "pending_updates": len(state.current_round_updates),
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-
-
-@router.post(
-    "/fl/trigger-aggregation",
-    response_model=AggregationResult,
-    tags=["Federated Learning"],
-)
-async def trigger_aggregation(
-    principal: Principal = Depends(require_client),
-    state: ServerState = Depends(get_state),
-) -> AggregationResult:
-    """Aggregate all queued updates on the event loop; any registered client may call this."""
-    current_round_updates = state.current_round_updates
-
-    if len(current_round_updates) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No weights submitted for aggregation",
-        )
-
-    min_clients = state.settings.fl_min_clients
-    if len(current_round_updates) < min_clients:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Need at least {min_clients} clients, have {len(current_round_updates)}",
-        )
-
-    logger.info(f"Triggering aggregation with {len(current_round_updates)} updates")
-
-    # Perform quantum-enhanced aggregation
-    global_state = await state.aggregator.aggregate(current_round_updates)
-
-    # Clear current round updates
-    state.current_round_updates = []
-
-    return AggregationResult(
-        round_number=global_state.round_number,
-        global_weights=global_state.weights.flatten().tolist(),
-        quantum_embedding=(
-            global_state.quantum_embedding.tolist()
-            if global_state.quantum_embedding is not None
-            else None
-        ),
-        metrics=global_state.aggregation_metrics,
-        timestamp=datetime.utcnow().isoformat(),
-    )
-
-
-@router.get(
-    "/fl/global-model",
-    response_model=dict[str, Any],
-    tags=["Federated Learning"],
-)
-async def get_global_model(
-    principal: Principal = Depends(require_client),
-    state: ServerState = Depends(get_state),
-) -> dict[str, Any]:
-    """Return the latest global weights, or 404 before the first round."""
-    if state.aggregator.global_state is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No global model available yet",
-        )
-
-    global_state = state.aggregator.global_state
-
-    return {
-        "round_number": global_state.round_number,
-        "weights": global_state.weights.flatten().tolist(),
-        "metrics": global_state.aggregation_metrics,
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-
-
-@router.get(
-    "/fl/metrics",
-    response_model=dict[str, Any],
-    tags=["Federated Learning"],
-)
-async def get_fl_metrics(state: ServerState = Depends(get_state)) -> dict[str, Any]:
-    """Return aggregation metrics; no authentication is required.
-
-    See `QuantumGlobalAggregator.get_aggregation_metrics` for the cost per call.
-    """
-    return state.aggregator.get_aggregation_metrics()
-
-
-# Quantum job endpoints
-@router.post(
-    "/quantum/submit-job",
-    response_model=QuantumJobStatus,
-    tags=["Quantum Computing"],
-)
-async def submit_quantum_job(
-    job: QuantumJobSubmission,
-    principal: Principal = Depends(require_client),
-) -> QuantumJobStatus:
-    """Queue a background aggregation job on Celery."""
-    logger.info(f"Submitting quantum job: {job.circuit_type}")
-
-    # Submit to Celery
-    task = submit_quantum_aggregation.delay(
-        circuit_type=job.circuit_type,
-        parameters=job.parameters,
-        shots=job.shots,
-    )
-
-    return QuantumJobStatus(
-        job_id=task.id,
-        status="pending",
-        progress=0.0,
-    )
-
-
-@router.get(
-    "/quantum/job/{job_id}",
-    response_model=QuantumJobStatus,
-    tags=["Quantum Computing"],
-)
-async def get_quantum_job_status(
-    job_id: str,
-    principal: Principal = Depends(require_client),
-) -> QuantumJobStatus:
-    """Return the Celery state of a job."""
-    status_info = get_task_status(job_id)
-
-    return QuantumJobStatus(
-        job_id=job_id,
-        status=status_info["status"],
-        progress=status_info.get("progress", 0.0),
-        result=status_info.get("result"),
-        error=status_info.get("error"),
-    )
+    try:
+        reply = state.sessions.handshake(hello, principal.client_id, lookup)
+    except TransportError as exc:
+        raise _transport_http_error(exc) from exc
+    return Response(content=reply, media_type=OCTET_STREAM)
 
 
 @router.post("/admin/clients", response_model=ClientInfo, tags=["Admin"])
-async def add_client(
+def add_client(
     request: EnrollmentRequest,
     response: Response,
     principal: Principal = Depends(require_admin),
@@ -524,7 +384,7 @@ async def add_client(
     except ClientConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        raise HTTPException(422, str(exc)) from exc
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     logger.info("%s enrolled %r (%s)", principal.client_id, request.client_id, request.scope)
     return ClientInfo(
@@ -533,7 +393,7 @@ async def add_client(
 
 
 @router.get("/admin/clients", response_model=list[ClientInfo], tags=["Admin"])
-async def list_clients(
+def list_clients(
     principal: Principal = Depends(require_admin), state: ServerState = Depends(get_state)
 ) -> list[ClientInfo]:
     """List enrolled identities."""
@@ -543,6 +403,159 @@ async def list_clients(
         ClientInfo(client_id=c.id, scope=c.scope, fingerprint=fingerprint(c.public_key))
         for c in clients
     ]
+
+
+@router.post("/admin/rounds", status_code=status.HTTP_201_CREATED, tags=["Admin"])
+def create_round(
+    request: RoundRequest,
+    principal: Principal = Depends(require_admin),
+    state: ServerState = Depends(get_state),
+) -> dict[str, Any]:
+    """Open a round; aggregation starts at ``min_clients`` updates or the deadline."""
+    try:
+        spec = ModelSpec(
+            tuple(TensorSpec(t.name, tuple(t.shape), t.dtype) for t in request.tensors)
+        )
+        info = state.rounds.create(spec, request.min_clients, request.deadline_seconds)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    logger.info("%s opened round %s", principal.client_id, info.round_id)
+    return info.to_json()
+
+
+@router.get("/rounds", tags=["Rounds"])
+def list_rounds(
+    principal: Principal = Depends(require_client), state: ServerState = Depends(get_state)
+) -> list[dict[str, Any]]:
+    """All rounds, newest first."""
+    return [info.to_json() for info in state.rounds.all()]
+
+
+@router.get("/rounds/{round_id}", tags=["Rounds"])
+def get_round(
+    round_id: int,
+    principal: Principal = Depends(require_client),
+    state: ServerState = Depends(get_state),
+) -> dict[str, Any]:
+    """State, spec and submission count of one round."""
+    try:
+        return state.rounds.info(round_id).to_json()
+    except RoundNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@router.post("/rounds/{round_id}/updates", status_code=status.HTTP_202_ACCEPTED, tags=["Rounds"])
+def submit_update(
+    round_id: int,
+    request: Request,
+    frame: bytes = Body(media_type=OCTET_STREAM),
+    principal: Principal = Depends(require_client),
+    state: ServerState = Depends(get_state),
+) -> dict[str, Any]:
+    """Accept one sealed update frame per client and round.
+
+    Status codes: 404 unknown round; 409 duplicate, closed round or replayed
+    frame; 401 frame from an unknown or foreign session; 413 too large; 422
+    payload that does not match the round's spec or limits.
+    """
+    _check_length(request, state.settings.max_update_bytes)
+    if len(frame) > state.settings.max_update_bytes:
+        raise HTTPException(413, "Update too large")
+    try:
+        payload = state.sessions.open(frame, principal.client_id)
+    except TransportError as exc:
+        raise _transport_http_error(exc) from exc
+    try:
+        info = state.rounds.submit(round_id, principal.client_id, payload)
+    except RoundNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except (RoundNotOpenError, DuplicateSubmissionError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except InvalidSubmissionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"round_id": round_id, "state": info.state, "submissions": info.submissions}
+
+
+@router.get(
+    "/rounds/{round_id}/model",
+    tags=["Rounds"],
+    response_class=Response,
+    responses={200: {"content": {OCTET_STREAM: {}}}},
+)
+def get_model(
+    round_id: int,
+    principal: Principal = Depends(require_client),
+    state: ServerState = Depends(get_state),
+) -> Response:
+    """Encoded global weights (`qedge.fl.weights` format) of a closed round."""
+    try:
+        payload = state.rounds.model(round_id)
+    except RoundNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except RoundNotOpenError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    digest = state.rounds.info(round_id).model_sha256 or ""
+    return Response(content=payload, media_type=OCTET_STREAM, headers={"X-Model-SHA256": digest})
+
+
+@router.get("/rounds/{round_id}/events", tags=["Rounds"])
+def round_events(
+    round_id: int,
+    principal: Principal = Depends(require_client),
+    state: ServerState = Depends(get_state),
+) -> StreamingResponse:
+    """Server-sent events with the round's state; the stream ends when it closes or fails."""
+    try:
+        state.rounds.info(round_id)
+    except RoundNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    interval = state.settings.events_poll_seconds
+
+    async def stream() -> AsyncIterator[str]:
+        last: tuple[str, int] | None = None
+        idle = 0.0
+        while True:
+            info = await asyncio.to_thread(state.rounds.info, round_id)
+            if (info.state, info.submissions) != last:
+                last, idle = (info.state, info.submissions), 0.0
+                yield f"event: round\ndata: {json.dumps(info.to_json())}\n\n"
+            elif idle >= 15.0:
+                idle = 0.0
+                yield ": keep-alive\n\n"
+            if info.state in ("closed", "failed"):
+                return
+            await asyncio.sleep(interval)
+            idle += interval
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+    )
+
+
+@router.post("/quantum/submit-job", response_model=QuantumJobStatus, tags=["Quantum Computing"])
+def submit_quantum_job(
+    job: QuantumJobSubmission, principal: Principal = Depends(require_client)
+) -> QuantumJobStatus:
+    """Queue a background aggregation job on Celery."""
+    task = submit_quantum_aggregation.delay(
+        circuit_type=job.circuit_type, parameters=job.parameters, shots=job.shots
+    )
+    return QuantumJobStatus(job_id=task.id, status="pending", progress=0.0)
+
+
+@router.get("/quantum/job/{job_id}", response_model=QuantumJobStatus, tags=["Quantum Computing"])
+def get_quantum_job_status(
+    job_id: str, principal: Principal = Depends(require_client)
+) -> QuantumJobStatus:
+    """Return the Celery state of a job."""
+    status_info = get_task_status(job_id)
+    return QuantumJobStatus(
+        job_id=job_id,
+        status=status_info["status"],
+        progress=status_info.get("progress", 0.0),
+        result=status_info.get("result"),
+        error=status_info.get("error"),
+    )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -561,36 +574,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        logger.info("Starting Q-Edge Backend...")
         # Fail closed: no backend or no keys means no server.
         if settings.key_dir is None:
             raise KeyStoreError("QEDGE_KEY_DIR is not set; create keys with `qedge keys init`")
         keys = load_server_keys(settings.key_dir, backend=settings.crypto_backend)
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        database = Database(settings.resolved_database_url())
+        database.upgrade()
+        signer = get_signer(keys.signature_algorithm, settings.crypto_backend)
+        rounds = RoundService(
+            database, BlobStore(settings.data_dir / "blobs"), max_samples=settings.max_samples
+        )
+        app.state.qedge = ServerState(
+            settings=settings,
+            keys=keys,
+            signer=signer,
+            tokens=TokenIssuer.from_settings(settings),
+            db=database,
+            rounds=rounds,
+            sessions=SessionStore(
+                kem=get_kem(keys.kem_algorithm, settings.crypto_backend),
+                signer=signer,
+                keys=keys,
+                ttl_seconds=settings.session_ttl_seconds,
+            ),
+        )
+
+        async def watch_deadlines() -> None:
+            while True:
+                await asyncio.sleep(settings.deadline_poll_seconds)
+                try:
+                    await asyncio.to_thread(rounds.close_expired)
+                except SQLAlchemyError:
+                    logger.exception("Deadline check failed; retrying")
+
+        watcher = asyncio.create_task(watch_deadlines())
         logger.info(
-            "Loaded %s and %s keys with the %s backend",
+            "Q-Edge server started: %s / %s keys, %s backend",
             keys.kem_algorithm,
             keys.signature_algorithm,
             settings.crypto_backend,
         )
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-        database = Database(settings.resolved_database_url())
-        database.upgrade()
-        config = QuantumAggregatorConfig(
-            n_qubits=settings.n_qubits,
-            vqc_layers=settings.vqc_layers,
-        )
-        app.state.qedge = ServerState(
-            settings=settings,
-            aggregator=QuantumGlobalAggregator(config),
-            keys=keys,
-            signer=get_signer(keys.signature_algorithm, settings.crypto_backend),
-            tokens=TokenIssuer.from_settings(settings),
-            db=database,
-        )
-        logger.info("Q-Edge Backend started successfully")
-        yield
-        logger.info("Shutting down Q-Edge Backend...")
-        database.dispose()
+        try:
+            yield
+        finally:
+            watcher.cancel()
+            rounds.shutdown()
+            database.dispose()
 
     app = FastAPI(
         title="Q-Edge API",
@@ -600,12 +630,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "an ML-DSA challenge-response."
         ),
         version=__version__,
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
         lifespan=lifespan,
     )
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
@@ -614,15 +640,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Request timing middleware
     @app.middleware("http")
     async def timing_middleware(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        start_time = time.time()
+        start_time = time.perf_counter()
         response = await call_next(request)
-        process_time = time.time() - start_time
-        response.headers["X-Process-Time"] = f"{process_time:.4f}"
+        response.headers["X-Process-Time"] = f"{time.perf_counter() - start_time:.4f}"
         return response
 
     app.include_router(router)
@@ -633,10 +657,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
     """Run `create_app` under uvicorn; reload is enabled when ``DEBUG_MODE=true``."""
     import uvicorn
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     uvicorn.run(
         "qedge.server.app:create_app",
         factory=True,

@@ -33,9 +33,6 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = Field(validation_alias=_env("JWT_SECRET_KEY"))
     jwt_ttl_seconds: int = Field(900, ge=60, le=86_400, validation_alias=_env("JWT_TTL_SECONDS"))
     server_id: str = Field("qedge", min_length=1, validation_alias=_env("QEDGE_SERVER_ID"))
-    n_qubits: int = Field(8, ge=2, le=12, validation_alias=_env("VQC_NUM_QUBITS"))
-    vqc_layers: int = Field(4, ge=1, le=6, validation_alias=_env("VQC_NUM_LAYERS"))
-    fl_min_clients: int = Field(1, ge=1, validation_alias=_env("FL_MIN_CLIENTS"))
     cors_origins: tuple[str, ...] = Field(
         ("http://localhost:3000",), validation_alias=_env("CORS_ORIGINS")
     )
@@ -46,6 +43,19 @@ class Settings(BaseSettings):
     key_dir: Path | None = Field(None, validation_alias=_env("QEDGE_KEY_DIR"))
     data_dir: Path = Field(Path("qedge-data"), validation_alias=_env("QEDGE_DATA_DIR"))
     database_url: str | None = Field(None, validation_alias=_env("QEDGE_DATABASE_URL"))
+    max_samples: int = Field(1_000_000, ge=1, validation_alias=_env("QEDGE_MAX_SAMPLES"))
+    max_update_bytes: int = Field(
+        16 * 1024 * 1024, ge=1024, validation_alias=_env("QEDGE_MAX_UPDATE_BYTES")
+    )
+    session_ttl_seconds: float = Field(
+        3600.0, gt=0, validation_alias=_env("QEDGE_SESSION_TTL_SECONDS")
+    )
+    deadline_poll_seconds: float = Field(
+        1.0, gt=0, validation_alias=_env("QEDGE_DEADLINE_POLL_SECONDS")
+    )
+    events_poll_seconds: float = Field(
+        0.5, gt=0, validation_alias=_env("QEDGE_EVENTS_POLL_SECONDS")
+    )
 
     def resolved_database_url(self) -> str:
         """``database_url``, or a SQLite file ``qedge.db`` under ``data_dir``."""

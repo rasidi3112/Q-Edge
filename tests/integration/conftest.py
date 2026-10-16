@@ -4,7 +4,8 @@ import pytest
 
 from qedge.crypto.backends import get_kem, get_signer
 from qedge.crypto.keys import DEFAULT_KEM, DEFAULT_SIGNATURE, generate_server_keys
-from qedge.server.auth import challenge_message, enroll_client
+from qedge.protocol import challenge_message
+from qedge.server.auth import enroll_client
 from qedge.server.db import Database
 from qedge.server.settings import Settings
 
@@ -26,8 +27,8 @@ def key_dir(tmp_path_factory):
 def settings(key_dir, tmp_path):
     return Settings(
         jwt_secret=JWT_SECRET,
-        n_qubits=4,
-        vqc_layers=2,
+        deadline_poll_seconds=0.05,
+        events_poll_seconds=0.05,
         crypto_backend="pure",
         key_dir=key_dir,
         data_dir=tmp_path / "data",
