@@ -177,3 +177,6 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# Raw experiment runs; only results/summary/ is committed
+results/runs/
