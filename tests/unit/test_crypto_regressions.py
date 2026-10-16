@@ -18,9 +18,6 @@ from qedge.crypto.transport import (
     initiate,
 )
 from qedge.fl.weights import ModelSpec, TensorSpec, WeightFormatError, decode_weights
-from qedge.server.auth import PQCAlgorithm, PQCProvider
-
-SIMULATED = pytest.mark.xfail(strict=True, reason="simulated cryptography")
 
 
 class _SetsBuiltinsFlag:
@@ -50,21 +47,27 @@ def _handshake(backend, signature="ML-DSA-65"):
     return hello, pending.finish(reply), server_session, kem, signer
 
 
-@SIMULATED
-def test_signature_verification_rejects_forged_signatures():
-    provider = PQCProvider()
+@pytest.mark.parametrize("algorithm", ["ML-DSA-65", "ML-DSA-87"])
+def test_signature_verification_rejects_forged_signatures(backend, algorithm):
+    signer = get_signer(algorithm, backend)
+    public_key, _ = signer.generate_keypair()
 
-    assert not provider.verify(b"evil", b"\0" * 32, b"", PQCAlgorithm.DILITHIUM_5)
+    assert not signer.verify(public_key, b"evil", b"\0" * 32)
+    assert not signer.verify(public_key, b"evil", b"\0" * signer.signature_size)
 
 
-@SIMULATED
-def test_kem_shared_secret_cannot_be_derived_from_public_key():
-    provider = PQCProvider()
-    keypair = provider.generate_keypair(PQCAlgorithm.KYBER_768)
+@pytest.mark.parametrize("algorithm", ["ML-KEM-768", "X25519-ML-KEM-768"])
+def test_kem_shared_secret_cannot_be_derived_from_public_key(backend, algorithm):
+    kem = get_kem(algorithm, backend)
+    public_key, secret_key = kem.generate_keypair()
+    _, attacker_secret_key = kem.generate_keypair()
 
-    shared_secret = provider.encapsulate(keypair.public_key, PQCAlgorithm.KYBER_768).shared_secret
+    ciphertext, shared_secret = kem.encapsulate(public_key)
 
-    assert shared_secret != hashlib.sha256(keypair.public_key + b"simulated_encap").digest()
+    assert shared_secret != hashlib.sha256(public_key + b"simulated_encap").digest()
+    assert shared_secret != hashlib.sha256(public_key).digest()
+    assert kem.decapsulate(attacker_secret_key, ciphertext) != shared_secret
+    assert kem.decapsulate(secret_key, ciphertext) == shared_secret
 
 
 def test_received_weights_are_never_unpickled(backend):

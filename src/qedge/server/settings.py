@@ -6,6 +6,9 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+
+from qedge.crypto.backends import BACKENDS
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,13 @@ class Settings:
         rate_limit_requests: Value echoed in ``X-RateLimit-*`` headers; no limit
             is enforced (``RATE_LIMIT_REQUESTS``).
         debug: Enables uvicorn reload in `run_server` (``DEBUG_MODE``).
+        crypto_backend: ``"liboqs"`` or ``"pure"`` (``QEDGE_CRYPTO_BACKEND``).
+            The server does not start if the backend is missing.
+        key_dir: Directory written by ``qedge keys init`` (``QEDGE_KEY_DIR``).
+            The server does not start without it.
+
+    Raises:
+        ValueError: If ``crypto_backend`` is not a known backend.
     """
 
     n_qubits: int = 8
@@ -28,14 +38,20 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://localhost:3000",)
     rate_limit_requests: int = 100
     debug: bool = False
+    crypto_backend: str = "liboqs"
+    key_dir: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.crypto_backend not in BACKENDS:
+            raise ValueError(f"Unknown crypto backend {self.crypto_backend!r}; expected {BACKENDS}")
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
         """Build settings from ``environ`` (default ``os.environ``).
 
         Raises:
-            ValueError: If a numeric variable is not an integer or ``CORS_ORIGINS`` is
-                not valid JSON.
+            ValueError: If a numeric variable is not an integer, ``CORS_ORIGINS`` is
+                not valid JSON, or ``QEDGE_CRYPTO_BACKEND`` is unknown.
         """
         env = os.environ if environ is None else environ
         raw_origins = env.get("CORS_ORIGINS", '["http://localhost:3000"]')
@@ -47,4 +63,6 @@ class Settings:
             cors_origins=tuple(origins),
             rate_limit_requests=int(env.get("RATE_LIMIT_REQUESTS", "100")),
             debug=env.get("DEBUG_MODE", "false").lower() == "true",
+            crypto_backend=env.get("QEDGE_CRYPTO_BACKEND", "liboqs"),
+            key_dir=Path(env["QEDGE_KEY_DIR"]) if env.get("QEDGE_KEY_DIR") else None,
         )

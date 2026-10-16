@@ -4,12 +4,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from qedge.server.app import create_app
-from qedge.server.settings import Settings
 
 
 @pytest.fixture
-def client():
-    with TestClient(create_app(Settings(n_qubits=4, vqc_layers=2))) as test_client:
+def client(settings):
+    with TestClient(create_app(settings)) as test_client:
         yield test_client
 
 
@@ -233,53 +232,6 @@ class TestSecurity:
 
         assert payload["client_id"] == "test_client"
         assert payload["session_id"] == "session123"
-
-    def test_pqc_provider_keypair_generation(self):
-        from qedge.server.auth import PQCAlgorithm, PQCProvider
-
-        provider = PQCProvider(use_simulation=True)
-        keypair = provider.generate_keypair(PQCAlgorithm.KYBER_1024)
-
-        assert keypair.public_key is not None
-        assert keypair.private_key is not None
-        assert len(keypair.public_key) > 0
-
-    def test_pqc_encapsulation(self):
-        from qedge.server.auth import PQCAlgorithm, PQCProvider
-
-        provider = PQCProvider(use_simulation=True)
-        keypair = provider.generate_keypair(PQCAlgorithm.KYBER_1024)
-
-        encapsulated = provider.encapsulate(
-            keypair.public_key,
-            PQCAlgorithm.KYBER_1024,
-        )
-
-        assert encapsulated.ciphertext is not None
-        assert encapsulated.shared_secret is not None
-        assert len(encapsulated.shared_secret) == 32
-
-    def test_pqc_signing(self):
-        from qedge.server.auth import PQCAlgorithm, PQCProvider
-
-        provider = PQCProvider(use_simulation=True)
-        keypair = provider.generate_keypair(PQCAlgorithm.DILITHIUM_5)
-
-        message = b"Test message"
-        signature = provider.sign(message, keypair)
-
-        assert signature is not None
-        assert len(signature) > 0
-
-        # Verify signature
-        is_valid = provider.verify(
-            message,
-            signature,
-            keypair.public_key,
-            PQCAlgorithm.DILITHIUM_5,
-        )
-
-        assert is_valid
 
 
 # Run tests with: pytest tests/integration/test_backend.py -v

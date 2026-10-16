@@ -7,6 +7,7 @@ admin endpoints.
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -30,6 +31,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from qedge import __version__
+from qedge.crypto.errors import KeyStoreError
+from qedge.crypto.keys import ServerKeys, fingerprint, load_server_keys
 from qedge.fl.aggregator import (
     LocalModelUpdate,
     QuantumAggregatorConfig,
@@ -62,8 +65,9 @@ class ClientRegistration(BaseModel):
 class ClientAuthResponse(BaseModel):
     """Access token and session id.
 
-    ``server_public_key`` is a fixed string, not a key, and ``expires_in`` is
-    always 3600 regardless of the token's ``exp``.
+    ``server_public_key`` is the server's KEM public key in base64 (see
+    ``GET /crypto/keys``). ``expires_in`` is always 3600 regardless of the
+    token's ``exp``.
     """
 
     access_token: str
@@ -121,12 +125,24 @@ class HealthCheckResponse(BaseModel):
     services: dict[str, str]
 
 
+class ServerKeysResponse(BaseModel):
+    """Server public keys in base64 with their SHA-256 fingerprints."""
+
+    kem_algorithm: str
+    kem_public_key: str
+    kem_fingerprint: str
+    signature_algorithm: str
+    signing_public_key: str
+    signing_fingerprint: str
+
+
 @dataclass
 class ServerState:
     """Per-application state created by the lifespan handler."""
 
     settings: Settings
     aggregator: QuantumGlobalAggregator
+    keys: ServerKeys
     registered_clients: dict[str, dict[str, Any]] = field(default_factory=dict)
     current_round_updates: list[LocalModelUpdate] = field(default_factory=list)
 
@@ -167,6 +183,20 @@ async def health_check(state: ServerState = Depends(get_state)) -> HealthCheckRe
         version=__version__,
         timestamp=datetime.utcnow().isoformat(),
         services=services,
+    )
+
+
+@router.get("/crypto/keys", response_model=ServerKeysResponse, tags=["Crypto"])
+async def get_server_keys(state: ServerState = Depends(get_state)) -> ServerKeysResponse:
+    """Return the server's KEM and ML-DSA public keys for clients to pin."""
+    keys = state.keys
+    return ServerKeysResponse(
+        kem_algorithm=keys.kem_algorithm,
+        kem_public_key=base64.b64encode(keys.kem_public_key).decode("ascii"),
+        kem_fingerprint=fingerprint(keys.kem_public_key),
+        signature_algorithm=keys.signature_algorithm,
+        signing_public_key=base64.b64encode(keys.signing_public_key).decode("ascii"),
+        signing_fingerprint=fingerprint(keys.signing_public_key),
     )
 
 
@@ -223,8 +253,7 @@ async def register_client(
         session_id=session_id,
     )
 
-    # Fixed string, not a public key.
-    server_public_key = "KYBER_SERVER_PUBLIC_KEY_BASE64..."
+    server_public_key = base64.b64encode(state.keys.kem_public_key).decode("ascii")
 
     return ClientAuthResponse(
         access_token=access_token,
@@ -475,13 +504,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings: Server settings; read from the environment when None.
 
     Returns:
-        An app whose `ServerState` is created when its lifespan starts.
+        An app whose `ServerState` is created when its lifespan starts. The
+        lifespan raises `KeyStoreError` or `BackendUnavailableError` when the
+        key directory or crypto backend is missing, so the server never runs
+        without real keys.
     """
     settings = Settings.from_env() if settings is None else settings
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Starting Q-Edge Backend...")
+        # Fail closed: no backend or no keys means no server.
+        if settings.key_dir is None:
+            raise KeyStoreError("QEDGE_KEY_DIR is not set; create keys with `qedge keys init`")
+        keys = load_server_keys(settings.key_dir, backend=settings.crypto_backend)
+        logger.info(
+            "Loaded %s and %s keys with the %s backend",
+            keys.kem_algorithm,
+            keys.signature_algorithm,
+            settings.crypto_backend,
+        )
         config = QuantumAggregatorConfig(
             n_qubits=settings.n_qubits,
             vqc_layers=settings.vqc_layers,
@@ -489,6 +531,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.qedge = ServerState(
             settings=settings,
             aggregator=QuantumGlobalAggregator(config),
+            keys=keys,
         )
         logger.info("Q-Edge Backend started successfully")
         yield
