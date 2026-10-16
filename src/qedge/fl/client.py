@@ -4,7 +4,8 @@ Importing this module requires torch: the model classes subclass ``torch.nn``
 at import time. The ``--simulate`` entry point trains on Gaussian noise with
 uniformly random labels, so its losses say nothing about learning.
 ``compress_gradients`` keeps the largest 10% of the full weights, not of the
-update, and zeroes the rest before they are sent.
+update, and zeroes the rest before they are sent. Weights travel over Flower's
+own gRPC transport; `qedge.crypto.transport` is not used here.
 """
 
 from __future__ import annotations
@@ -42,7 +43,6 @@ except ImportError:
     TORCH_AVAILABLE = False
     logging.warning("PyTorch not installed. Install with: pip install torch")
 
-from qedge.crypto.transport import PQCTransportLayer
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,6 @@ class MobileDeviceConfig:
     local_epochs: int = 5
     batch_size: int = 32
     learning_rate: float = 0.001
-    enable_pqc: bool = True
     compress_gradients: bool = True
     compression_ratio: float = 0.1
     max_memory_mb: int = 512
@@ -128,14 +127,6 @@ class MobileFlowerClient:
         else:
             self.model = None
             logger.warning("PyTorch not available, model training disabled")
-
-        # Initialize PQC transport
-        if config.enable_pqc:
-            self.pqc_transport: PQCTransportLayer | None = PQCTransportLayer(
-                client_id=config.client_id
-            )
-        else:
-            self.pqc_transport = None
 
         # Training state
         self._local_data: tuple[NDArray[Any], NDArray[Any]] | None = None
@@ -353,41 +344,6 @@ class MobileFlowerClient:
 
         return compressed
 
-    def encrypt_weights(
-        self,
-        parameters: list[NDArray[Any]],
-    ) -> bytes:
-        """Encrypt with the transport, or pickle without encryption when PQC is disabled."""
-        if self.pqc_transport is None:
-            # Fallback: serialize without encryption
-            import pickle
-
-            return pickle.dumps(parameters)
-
-        return self.pqc_transport.encrypt_weights(parameters)
-
-    def sign_update(
-        self,
-        data: bytes,
-    ) -> bytes:
-        """Sign ``data`` with the transport, or with HMAC when PQC is disabled.
-
-        The HMAC key is the client id, which is public, so the fallback authenticates
-        nothing.
-        """
-        if self.pqc_transport is None:
-            # Fallback: HMAC signature
-            import hashlib
-            import hmac
-
-            return hmac.new(
-                self.config.client_id.encode(),
-                data,
-                hashlib.sha256,
-            ).digest()
-
-        return self.pqc_transport.sign(data)
-
     def start(self) -> None:
         """Connect to ``config.server_address`` with the legacy ``flwr.client.start_client`` API."""
         if not FLOWER_AVAILABLE:
@@ -418,7 +374,6 @@ class FlowerClientAdapter(NumPyClient):
         """Report the client id and feature flags to the server."""
         return {
             "client_id": self.mobile_client.config.client_id,
-            "pqc_enabled": str(self.mobile_client.config.enable_pqc),
             "battery_aware": str(self.mobile_client.config.battery_aware),
         }
 
@@ -493,10 +448,7 @@ def run_simulation(
     # Create clients
     clients = []
     for i in range(n_clients):
-        config = MobileDeviceConfig(
-            client_id=f"mobile_{i:03d}",
-            enable_pqc=True,
-        )
+        config = MobileDeviceConfig(client_id=f"mobile_{i:03d}")
         client = MobileFlowerClient(config)
 
         # Gaussian features with uniformly random labels, so there is nothing to

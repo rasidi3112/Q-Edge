@@ -1,438 +1,412 @@
-"""Client-side encrypted message transport.
+"""Authenticated, encrypted channel between a client and the server.
 
-Simulated by default. With ``use_simulation=True`` (the default) or without
-liboqs, the shared secret is ``sha256(server_public_key + session_id)``, both of
-which are public; the cipher is an HMAC-SHA256 keystream XOR; and ``verify``
-accepts any signature of 64 bytes or more. These paths provide neither
-confidentiality nor authenticity. ``decrypt_weights`` unpickles its input and
-must not be used on data from another party.
+Handshake, one round trip:
+
+1. The client encapsulates to the server's static KEM public key, picks a
+   random 16-byte session id and sends HELLO, signed with its ML-DSA key.
+2. The server verifies that signature against the client's registered key,
+   decapsulates, derives the session keys and answers with ACCEPT: an AEAD
+   frame under the new server-to-client key whose plaintext is the server's
+   ML-DSA signature over the transcript hash. Opening it shows the server holds
+   the KEM secret key; the signature shows it holds the pinned identity key.
+
+Data frames use ChaCha20-Poly1305 with one key per direction. Both keys come
+from HKDF-SHA256 over the KEM shared secret, salted with the session id and
+bound to the transcript (algorithm names, server public keys, signed HELLO).
+
+Frame layout, big-endian::
+
+    header = "QE" | version u8 | type u8 | session id (16) | counter u64 | timestamp u64
+    HELLO  = header | client id length u16 | client id (UTF-8) | KEM ciphertext | signature
+    ACCEPT = DATA = header | AEAD ciphertext and tag;  AAD = header,
+             nonce = 4 zero bytes || counter
+
+KEM ciphertext and signature lengths come from the algorithms in use. A
+receiver rejects a frame whose counter is not above the last accepted one,
+whose session id differs, or whose timestamp is more than ``max_clock_skew``
+seconds from its clock. `accept` keeps no state: the caller must refuse a HELLO
+session id it has already accepted. `Session` is not thread-safe.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import hmac
-import logging
 import secrets
 import struct
 import time
-from dataclasses import dataclass, field
-from typing import Any, cast
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import IntEnum
 
-from numpy.typing import NDArray
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-logger = logging.getLogger(__name__)
+from qedge.crypto.errors import InvalidCiphertextError
+from qedge.crypto.kem import Kem
+from qedge.crypto.sign import Signer
+
+VERSION = 1
+SESSION_ID_SIZE = 16
+MAX_FRAME_SIZE = 64 * 1024 * 1024
+MAX_CLIENT_ID_BYTES = 256
+DEFAULT_MAX_CLOCK_SKEW = 300.0
+
+_MAGIC = b"QE"
+_HEADER = struct.Struct(">2sBB16sQQ")
+HEADER_SIZE = _HEADER.size
+_TAG_SIZE = 16
+_MAX_COUNTER = 2**64 - 1
+_LABEL = b"qedge/transport/v1"
+_ACCEPT_LABEL = _LABEL + b"/accept"
+
+Clock = Callable[[], float]
 
 
-@dataclass
-class PQCSession:
-    """Per-session state shared by `PQCTransportLayer` methods."""
+class MessageType(IntEnum):
+    """Frame type carried in the header."""
 
-    session_id: str
-    shared_secret: bytes
-    server_public_key: bytes = b""
-    client_signing_key: bytes = b""
-    client_verify_key: bytes = b""
-    created_at: float = field(default_factory=time.time)
-    last_activity: float = field(default_factory=time.time)
-    message_counter: int = 0
+    HELLO = 1
+    ACCEPT = 2
+    DATA = 3
 
 
-class PQCTransportLayer:
-    """Encrypts, signs and frames messages for one client.
+class TransportError(ValueError):
+    """Base class for every frame the transport refuses."""
 
-    Args:
-        client_id: Identifier written into every message header.
-        use_simulation: Use the simulated primitives described in the module
-            docstring even when liboqs and ``cryptography`` are installed.
+
+class FrameError(TransportError):
+    """The frame is malformed: wrong magic, version, type, length or encoding."""
+
+
+class AuthenticationError(TransportError):
+    """A signature, AEAD tag, client id or session id did not check out."""
+
+
+class ReplayError(TransportError):
+    """The frame counter is not above the last accepted counter."""
+
+
+class ExpiredFrameError(TransportError):
+    """The frame timestamp is outside the allowed clock skew."""
+
+
+@dataclass(frozen=True)
+class FrameHeader:
+    """Parsed frame header; every field is authenticated as AAD or signed."""
+
+    version: int
+    msg_type: MessageType
+    session_id: bytes
+    counter: int
+    timestamp: int
+
+    def pack(self) -> bytes:
+        """Encode the header as ``HEADER_SIZE`` bytes."""
+        return _HEADER.pack(
+            _MAGIC, self.version, self.msg_type, self.session_id, self.counter, self.timestamp
+        )
+
+
+def parse_header(frame: bytes) -> FrameHeader:
+    """Parse and check the fixed header at the start of ``frame``.
+
+    Raises:
+        FrameError: If the frame is shorter than a header, larger than
+            ``MAX_FRAME_SIZE``, or has an unknown magic, version or type.
     """
+    if len(frame) < HEADER_SIZE:
+        raise FrameError(f"Frame of {len(frame)} bytes is shorter than the header")
+    if len(frame) > MAX_FRAME_SIZE:
+        raise FrameError(f"Frame of {len(frame)} bytes exceeds {MAX_FRAME_SIZE}")
+    magic, version, msg_type, session_id, counter, timestamp = _HEADER.unpack_from(frame)
+    if magic != _MAGIC:
+        raise FrameError("Bad frame magic")
+    if version != VERSION:
+        raise FrameError(f"Unsupported frame version {version}")
+    try:
+        parsed_type = MessageType(msg_type)
+    except ValueError as exc:
+        raise FrameError(f"Unknown frame type {msg_type}") from exc
+    return FrameHeader(version, parsed_type, session_id, counter, timestamp)
 
-    # Constants
-    NONCE_SIZE = 12
-    TAG_SIZE = 16
-    TIMESTAMP_TOLERANCE = 300  # 5 minutes
+
+@dataclass(frozen=True)
+class ServerIdentity:
+    """Server public keys that a client pins."""
+
+    kem_public_key: bytes
+    signing_public_key: bytes
+
+
+@dataclass(frozen=True)
+class ClientCredentials:
+    """Client id and the ML-DSA secret key registered for it."""
+
+    client_id: str
+    signing_secret_key: bytes
+
+
+def _check_timestamp(timestamp: int, clock: Clock, max_clock_skew: float) -> None:
+    if abs(clock() - timestamp) > max_clock_skew:
+        raise ExpiredFrameError(f"Frame timestamp {timestamp} is outside the allowed skew")
+
+
+def _nonce(counter: int) -> bytes:
+    return b"\0\0\0\0" + counter.to_bytes(8, "big")
+
+
+class Session:
+    """An established channel; create it with `initiate` and `accept`."""
 
     def __init__(
         self,
-        client_id: str,
-        use_simulation: bool = True,
+        *,
+        session_id: bytes,
+        peer_id: str,
+        send_key: bytes,
+        recv_key: bytes,
+        clock: Clock,
+        max_clock_skew: float,
     ) -> None:
-        self.client_id = client_id
-        self.use_simulation = use_simulation
-        self.session: PQCSession | None = None
+        self.session_id = session_id
+        self.peer_id = peer_id
+        self._send = ChaCha20Poly1305(send_key)
+        self._recv = ChaCha20Poly1305(recv_key)
+        self._send_counter = 0
+        self._recv_next = 0
+        self._clock = clock
+        self._max_clock_skew = max_clock_skew
 
-        # Try to import actual crypto libraries
-        self._aes_available = False
-        self._oqs_available = False
+    def seal(self, plaintext: bytes) -> bytes:
+        """Encrypt ``plaintext`` into a DATA frame.
 
+        Raises:
+            TransportError: If the frame would exceed ``MAX_FRAME_SIZE`` or the
+                send counter is exhausted.
+        """
+        return self._seal(MessageType.DATA, plaintext)
+
+    def open(self, frame: bytes) -> bytes:
+        """Authenticate and decrypt a DATA frame from the peer.
+
+        Raises:
+            FrameError: If the frame is malformed or not a DATA frame.
+            AuthenticationError: If the session id or AEAD tag does not match.
+            ReplayError: If the counter was already used or is older.
+            ExpiredFrameError: If the timestamp is outside the allowed skew.
+        """
+        return self._open(frame, MessageType.DATA)
+
+    def _seal(self, msg_type: MessageType, plaintext: bytes) -> bytes:
+        if HEADER_SIZE + len(plaintext) + _TAG_SIZE > MAX_FRAME_SIZE:
+            raise TransportError(f"Plaintext of {len(plaintext)} bytes does not fit in a frame")
+        if self._send_counter > _MAX_COUNTER:
+            raise TransportError("Send counter exhausted; start a new session")
+        header = FrameHeader(
+            VERSION, msg_type, self.session_id, self._send_counter, int(self._clock())
+        ).pack()
+        ciphertext = self._send.encrypt(_nonce(self._send_counter), plaintext, header)
+        self._send_counter += 1
+        return header + ciphertext
+
+    def _open(self, frame: bytes, expected: MessageType) -> bytes:
+        header = parse_header(frame)
+        if header.msg_type != expected:
+            raise FrameError(f"Expected a {expected.name} frame, got {header.msg_type.name}")
+        if len(frame) < HEADER_SIZE + _TAG_SIZE:
+            raise FrameError("Frame is too short to hold an AEAD tag")
+        if header.session_id != self.session_id:
+            raise AuthenticationError("Frame belongs to another session")
+        if header.counter < self._recv_next:
+            raise ReplayError(f"Counter {header.counter} was already used or is older")
+        _check_timestamp(header.timestamp, self._clock, self._max_clock_skew)
         try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            plaintext = self._recv.decrypt(
+                _nonce(header.counter), frame[HEADER_SIZE:], frame[:HEADER_SIZE]
+            )
+        except InvalidTag as exc:
+            raise AuthenticationError("AEAD tag does not verify") from exc
+        # Advance only after authentication, so forged frames cannot burn counters.
+        self._recv_next = header.counter + 1
+        return plaintext
 
-            self._aesgcm_class = AESGCM
-            self._aes_available = True
-        except ImportError:
-            logger.warning("cryptography library not available, using simulation")
 
-        try:
-            import oqs
+def _transcript(kem: Kem, signer: Signer, server: ServerIdentity, signed_hello: bytes) -> bytes:
+    digest = hashlib.sha256()
+    for part in (
+        _LABEL,
+        kem.name.encode(),
+        signer.name.encode(),
+        server.kem_public_key,
+        server.signing_public_key,
+        signed_hello,
+    ):
+        digest.update(len(part).to_bytes(4, "big"))
+        digest.update(part)
+    return digest.digest()
 
-            self._oqs = oqs
-            self._oqs_available = True
-        except ImportError:
-            logger.warning("liboqs not available, using simulation")
 
-        # Initialize client keypair for signing
-        self._init_signing_keypair()
+def _session_keys(
+    shared_secret: bytes, session_id: bytes, transcript: bytes
+) -> tuple[bytes, bytes]:
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(), length=64, salt=session_id, info=_LABEL + b"/keys" + transcript
+    )
+    okm = hkdf.derive(shared_secret)
+    return okm[:32], okm[32:]  # client-to-server, server-to-client
 
-        logger.info(f"Initialized PQCTransportLayer for client: {client_id}")
 
-    def _init_signing_keypair(self) -> None:
-        self._signing_public_key: bytes
-        self._signing_private_key: bytes
-        if self._oqs_available and not self.use_simulation:
-            sig = self._oqs.Signature("Dilithium5")
-            self._signing_public_key = sig.generate_keypair()
-            self._signing_private_key = sig.export_secret_key()
-        else:
-            # Simulated keypair
-            self._signing_private_key = secrets.token_bytes(64)
-            self._signing_public_key = hashlib.sha256(self._signing_private_key).digest()
+class PendingSession:
+    """Client side between sending HELLO and receiving ACCEPT."""
 
-    async def establish_session(
-        self,
-        server_public_key: bytes,
-    ) -> PQCSession:
-        """Derive a session key for ``server_public_key``.
+    def __init__(
+        self, session: Session, transcript: bytes, server: ServerIdentity, signer: Signer
+    ) -> None:
+        self._session: Session | None = session
+        self._transcript = transcript
+        self._server = server
+        self._signer = signer
 
-        With liboqs and ``use_simulation=False`` this runs Kyber1024 encapsulation but
-        drops the ciphertext, so the server cannot derive the same key.
-
-        Returns:
-            The new session, also stored on ``self.session``.
-        """
-        session_id = f"{self.client_id}_{int(time.time())}_{secrets.token_hex(8)}"
-
-        # Perform key encapsulation
-        if self._oqs_available and not self.use_simulation:
-            kem = self._oqs.KeyEncapsulation("Kyber1024")
-            # The KEM ciphertext is dropped here, so the server can never decapsulate.
-            ciphertext, shared_secret = kem.encap_secret(server_public_key)  # noqa: RUF059
-        else:
-            # Simulated key exchange
-            shared_secret = hashlib.sha256(server_public_key + session_id.encode()).digest()
-
-        self.session = PQCSession(
-            session_id=session_id,
-            shared_secret=shared_secret,
-            server_public_key=server_public_key,
-            client_signing_key=self._signing_private_key,
-            client_verify_key=self._signing_public_key,
-        )
-
-        logger.info(f"Established PQC session: {session_id}")
-        return self.session
-
-    def _derive_key(
-        self,
-        context: bytes,
-        key_length: int = 32,
-    ) -> bytes:
-        if self.session is None:
-            raise RuntimeError("No session established")
-
-        # Simple HKDF-like derivation
-        prk = hmac.new(
-            self.session.shared_secret,
-            context,
-            hashlib.sha256,
-        ).digest()
-
-        # Expand to desired length
-        blocks = (key_length + 31) // 32
-        output = b""
-        previous = b""
-
-        for i in range(blocks):
-            previous = hmac.new(
-                prk,
-                previous + context + bytes([i + 1]),
-                hashlib.sha256,
-            ).digest()
-            output += previous
-
-        return output[:key_length]
-
-    def encrypt_weights(
-        self,
-        weights: list[NDArray[Any]],
-    ) -> bytes:
-        """Pickle, zlib-compress and encrypt a list of arrays.
+    def finish(self, accept_frame: bytes) -> Session:
+        """Check the server's ACCEPT frame and return the established session.
 
         Raises:
-            RuntimeError: If no session has been established.
+            TransportError: If ACCEPT is malformed, fails its AEAD tag, carries a
+                signature that the pinned server key does not verify, or
+                `finish` was already called.
         """
-        # Serialize weights
-        import pickle
-
-        serialized = pickle.dumps(weights)
-
-        # Add compression
-        import zlib
-
-        compressed = zlib.compress(serialized, level=6)
-
-        # Encrypt
-        return self._encrypt(compressed, context=b"weight_encryption")
-
-    def decrypt_weights(
-        self,
-        ciphertext: bytes,
-    ) -> list[NDArray[Any]]:
-        """Reverse `encrypt_weights`.
-
-        Calls ``pickle.loads`` on the decrypted bytes, which runs code chosen by whoever
-        produced the ciphertext.
-
-        Raises:
-            RuntimeError: If no session has been established.
-            ValueError: If the simulated authentication tag does not match.
-            cryptography.exceptions.InvalidTag: If AES-GCM authentication fails.
-        """
-        import pickle
-        import zlib
-
-        # Decrypt
-        compressed = self._decrypt(ciphertext, context=b"weight_encryption")
-
-        # Decompress
-        serialized = zlib.decompress(compressed)
-
-        # Deserialize
-        return cast(list[NDArray[Any]], pickle.loads(serialized))
-
-    def _encrypt(
-        self,
-        plaintext: bytes,
-        context: bytes,
-    ) -> bytes:
-        # Derive encryption key
-        key = self._derive_key(context)
-
-        # Generate nonce
-        nonce = secrets.token_bytes(self.NONCE_SIZE)
-
-        if self._aes_available and not self.use_simulation:
-            # Use actual AES-GCM
-            aesgcm = self._aesgcm_class(key)
-            ciphertext = aesgcm.encrypt(nonce, plaintext, None)
-        else:
-            # Simulated encryption (XOR with key stream)
-            key_stream = self._generate_keystream(key, nonce, len(plaintext))
-            ciphertext_raw = bytes(a ^ b for a, b in zip(plaintext, key_stream, strict=True))
-
-            # Simulated tag
-            tag = hmac.new(key, nonce + ciphertext_raw, hashlib.sha256).digest()[: self.TAG_SIZE]
-            ciphertext = ciphertext_raw + tag
-
-        return nonce + ciphertext
-
-    def _decrypt(
-        self,
-        ciphertext: bytes,
-        context: bytes,
-    ) -> bytes:
-        # Derive encryption key
-        key = self._derive_key(context)
-
-        # Extract nonce
-        nonce = ciphertext[: self.NONCE_SIZE]
-        encrypted_data = ciphertext[self.NONCE_SIZE :]
-
-        if self._aes_available and not self.use_simulation:
-            aesgcm = self._aesgcm_class(key)
-            return aesgcm.decrypt(nonce, encrypted_data, None)
-        else:
-            # Simulated decryption
-            ciphertext_raw = encrypted_data[: -self.TAG_SIZE]
-            tag = encrypted_data[-self.TAG_SIZE :]
-
-            # Verify tag
-            expected_tag = hmac.new(key, nonce + ciphertext_raw, hashlib.sha256).digest()[
-                : self.TAG_SIZE
-            ]
-            if not hmac.compare_digest(tag, expected_tag):
-                raise ValueError("Authentication failed")
-
-            # Decrypt
-            key_stream = self._generate_keystream(key, nonce, len(ciphertext_raw))
-            return bytes(a ^ b for a, b in zip(ciphertext_raw, key_stream, strict=True))
-
-    def _generate_keystream(
-        self,
-        key: bytes,
-        nonce: bytes,
-        length: int,
-    ) -> bytes:
-        keystream = b""
-        counter = 0
-
-        while len(keystream) < length:
-            block = hmac.new(
-                key,
-                nonce + counter.to_bytes(8, "big"),
-                hashlib.sha256,
-            ).digest()
-            keystream += block
-            counter += 1
-
-        return keystream[:length]
-
-    def sign(self, data: bytes) -> bytes:
-        """Sign ``data`` with Dilithium5, or with HMAC-SHA512 in simulated mode."""
-        if self._oqs_available and not self.use_simulation:
-            sig = self._oqs.Signature("Dilithium5", self._signing_private_key)
-            return cast(bytes, sig.sign(data))
-        else:
-            # Simulated signature using HMAC
-            return hmac.new(
-                self._signing_private_key,
-                data,
-                hashlib.sha512,
-            ).digest()
-
-    def verify(
-        self,
-        data: bytes,
-        signature: bytes,
-        public_key: bytes,
-    ) -> bool:
-        """Check a signature.
-
-        In simulated mode this returns True for any signature of 64 bytes or more and
-        ignores ``data`` and ``public_key``.
-        """
-        if self._oqs_available and not self.use_simulation:
-            sig = self._oqs.Signature("Dilithium5")
-            return bool(sig.verify(data, signature, public_key))
-        else:
-            # Simulated verification (check signature length)
-            return len(signature) >= 64
-
-    def create_authenticated_message(
-        self,
-        payload: bytes,
-        message_type: str = "weights",
-    ) -> bytes:
-        """Frame ``payload`` as ``header || encrypt(payload) || signature``.
-
-        The 104-byte header holds a timestamp, the message type, a per-session counter
-        and the client id. Receivers do not check the counter.
-
-        Raises:
-            RuntimeError: If no session has been established.
-        """
-        if self.session is None:
-            raise RuntimeError("No session established")
-
-        # Update session state
-        self.session.message_counter += 1
-        self.session.last_activity = time.time()
-
-        # Build header
-        timestamp = int(time.time())
-        header = struct.pack(
-            ">I32sI64s",
-            timestamp,
-            message_type.encode().ljust(32, b"\0"),
-            self.session.message_counter,
-            self.client_id.encode().ljust(64, b"\0"),
-        )
-
-        # Encrypt payload
-        encrypted_payload = self._encrypt(payload, context=b"message_payload")
-
-        # Sign header + encrypted payload
-        signature = self.sign(header + encrypted_payload)
-
-        # Combine: header || encrypted_payload || signature
-        return header + encrypted_payload + signature
-
-    def parse_authenticated_message(
-        self,
-        message: bytes,
-    ) -> tuple[bytes, dict[str, Any]]:
-        """Split, verify and decrypt a frame built by `create_authenticated_message`.
-
-        Assumes a 64-byte trailing signature and rejects timestamps more than 300 s from
-        local time. The counter is not checked, so replays inside that window pass.
-
-        Returns:
-            The decrypted payload and the parsed header fields.
-
-        Raises:
-            ValueError: If the frame is too short, expired, or fails verification.
-        """
-        # Header is 104 bytes (4 + 32 + 4 + 64)
-        header_size = 104
-
-        if len(message) < header_size + self.NONCE_SIZE + self.TAG_SIZE:
-            raise ValueError("Message too short")
-
-        # Parse header
-        header = message[:header_size]
-        timestamp, msg_type, counter, client_id = struct.unpack(
-            ">I32sI64s",
-            header,
-        )
-
-        # Check timestamp
-        current_time = int(time.time())
-        if abs(current_time - timestamp) > self.TIMESTAMP_TOLERANCE:
-            raise ValueError("Message timestamp expired")
-
-        # Assumes a 64-byte signature; Dilithium5 signatures are 4595 bytes.
-        signature_size = 64
-        signature = message[-signature_size:]
-        encrypted_payload = message[header_size:-signature_size]
-
-        # Verify signature
-        if not self.verify(
-            header + encrypted_payload,
-            signature,
-            self.session.server_public_key if self.session else b"",
+        session, self._session = self._session, None
+        if session is None:
+            raise TransportError("Handshake already finished")
+        signature = session._open(accept_frame, MessageType.ACCEPT)
+        if not self._signer.verify(
+            self._server.signing_public_key, _ACCEPT_LABEL + self._transcript, signature
         ):
-            raise ValueError("Signature verification failed")
+            raise AuthenticationError("Server signature does not verify with the pinned key")
+        return session
 
-        # Decrypt payload
-        payload = self._decrypt(encrypted_payload, context=b"message_payload")
 
-        metadata = {
-            "timestamp": timestamp,
-            "message_type": msg_type.rstrip(b"\0").decode(),
-            "counter": counter,
-            "client_id": client_id.rstrip(b"\0").decode(),
-        }
+def initiate(
+    credentials: ClientCredentials,
+    server: ServerIdentity,
+    *,
+    kem: Kem,
+    signer: Signer,
+    clock: Clock = time.time,
+    max_clock_skew: float = DEFAULT_MAX_CLOCK_SKEW,
+) -> tuple[bytes, PendingSession]:
+    """Start a handshake with ``server``.
 
-        return payload, metadata
+    Returns:
+        The HELLO frame to send and the pending session to finish with the
+        server's ACCEPT frame.
 
-    def get_session_info(self) -> dict[str, Any]:
-        """Return session id, timestamps and message count, or ``{"status": "no_session"}``."""
-        if self.session is None:
-            return {"status": "no_session"}
+    Raises:
+        ValueError: If the client id is empty or longer than
+            ``MAX_CLIENT_ID_BYTES`` in UTF-8.
+        InvalidKeyError: If a key has the wrong length for ``kem`` or ``signer``.
+    """
+    client_id = credentials.client_id.encode("utf-8")
+    if not 0 < len(client_id) <= MAX_CLIENT_ID_BYTES:
+        raise ValueError(f"Client id must be 1 to {MAX_CLIENT_ID_BYTES} UTF-8 bytes")
+    session_id = secrets.token_bytes(SESSION_ID_SIZE)
+    ciphertext, shared_secret = kem.encapsulate(server.kem_public_key)
+    header = FrameHeader(VERSION, MessageType.HELLO, session_id, 0, int(clock())).pack()
+    signed = header + len(client_id).to_bytes(2, "big") + client_id + ciphertext
+    signature = signer.sign(credentials.signing_secret_key, signed)
+    transcript = _transcript(kem, signer, server, signed)
+    client_to_server, server_to_client = _session_keys(shared_secret, session_id, transcript)
+    session = Session(
+        session_id=session_id,
+        peer_id="server",
+        send_key=client_to_server,
+        recv_key=server_to_client,
+        clock=clock,
+        max_clock_skew=max_clock_skew,
+    )
+    return signed + signature, PendingSession(session, transcript, server, signer)
 
-        return {
-            "session_id": self.session.session_id,
-            "created_at": self.session.created_at,
-            "last_activity": self.session.last_activity,
-            "message_count": self.session.message_counter,
-            "age_seconds": time.time() - self.session.created_at,
-        }
 
-    def get_public_key(self) -> bytes:
-        """Return the client's signing public key as raw bytes."""
-        return self._signing_public_key
+def accept(
+    hello: bytes,
+    *,
+    kem: Kem,
+    signer: Signer,
+    server: ServerIdentity,
+    kem_secret_key: bytes,
+    signing_secret_key: bytes,
+    client_public_key: Callable[[str], bytes | None],
+    clock: Clock = time.time,
+    max_clock_skew: float = DEFAULT_MAX_CLOCK_SKEW,
+) -> tuple[Session, bytes]:
+    """Verify a client's HELLO, decapsulate, and build the ACCEPT reply.
 
-    def get_public_key_base64(self) -> str:
-        """Return `get_public_key` encoded as base64 ASCII."""
-        return base64.b64encode(self._signing_public_key).decode("ascii")
+    Args:
+        hello: The HELLO frame.
+        kem: The server's KEM.
+        signer: The signature scheme used by clients and the server.
+        server: The server's own public keys, as clients pin them.
+        kem_secret_key: The server's KEM secret key.
+        signing_secret_key: The server's ML-DSA identity secret key.
+        client_public_key: Returns the registered ML-DSA public key for a
+            client id, or None if the client is unknown.
+        clock: Source of the current Unix time in seconds.
+        max_clock_skew: Largest accepted difference between the HELLO
+            timestamp and ``clock()``, in seconds.
+
+    Returns:
+        The server-side session (``peer_id`` is the client id) and the ACCEPT
+        frame to send back.
+
+    Raises:
+        FrameError: If HELLO is malformed.
+        AuthenticationError: If the client is unknown or its signature fails.
+        ExpiredFrameError: If the HELLO timestamp is outside the allowed skew.
+    """
+    header = parse_header(hello)
+    if header.msg_type != MessageType.HELLO or header.counter != 0:
+        raise FrameError("Expected a HELLO frame with counter 0")
+    body = hello[HEADER_SIZE:]
+    if len(body) < 2:
+        raise FrameError("HELLO is too short")
+    id_length = int.from_bytes(body[:2], "big")
+    if not 0 < id_length <= MAX_CLIENT_ID_BYTES:
+        raise FrameError(f"Client id length {id_length} is out of range")
+    if len(body) != 2 + id_length + kem.ciphertext_size + signer.signature_size:
+        raise FrameError("HELLO length does not match the KEM and signature sizes")
+    try:
+        client_id = body[2 : 2 + id_length].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise FrameError("Client id is not valid UTF-8") from exc
+    signed_end = HEADER_SIZE + 2 + id_length + kem.ciphertext_size
+    signed, signature = hello[:signed_end], hello[signed_end:]
+
+    public_key = client_public_key(client_id)
+    if public_key is None:
+        raise AuthenticationError(f"Unknown client {client_id!r}")
+    if not signer.verify(public_key, signed, signature):
+        raise AuthenticationError(f"HELLO signature from {client_id!r} does not verify")
+    _check_timestamp(header.timestamp, clock, max_clock_skew)
+    try:
+        shared_secret = kem.decapsulate(
+            kem_secret_key, hello[signed_end - kem.ciphertext_size : signed_end]
+        )
+    except InvalidCiphertextError as exc:
+        raise AuthenticationError(f"{client_id!r} signed an invalid KEM ciphertext") from exc
+
+    transcript = _transcript(kem, signer, server, signed)
+    client_to_server, server_to_client = _session_keys(shared_secret, header.session_id, transcript)
+    session = Session(
+        session_id=header.session_id,
+        peer_id=client_id,
+        send_key=server_to_client,
+        recv_key=client_to_server,
+        clock=clock,
+        max_clock_skew=max_clock_skew,
+    )
+    reply = session._seal(
+        MessageType.ACCEPT, signer.sign(signing_secret_key, _ACCEPT_LABEL + transcript)
+    )
+    return session, reply

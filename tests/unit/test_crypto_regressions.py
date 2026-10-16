@@ -1,15 +1,23 @@
 """Regression tests for the simulated cryptography found in the 99a5be6 audit."""
 
-import asyncio
 import builtins
 import hashlib
-import hmac
+import inspect
 import pickle
-import zlib
 
 import pytest
 
-from qedge.crypto.transport import PQCTransportLayer
+from qedge.crypto import transport
+from qedge.crypto.backends import get_kem, get_signer
+from qedge.crypto.transport import (
+    HEADER_SIZE,
+    ClientCredentials,
+    ReplayError,
+    ServerIdentity,
+    accept,
+    initiate,
+)
+from qedge.fl.weights import ModelSpec, TensorSpec, WeightFormatError, decode_weights
 from qedge.server.auth import PQCAlgorithm, PQCProvider
 
 SIMULATED = pytest.mark.xfail(strict=True, reason="simulated cryptography")
@@ -20,8 +28,26 @@ class _SetsBuiltinsFlag:
         return (exec, ("import builtins; builtins._qedge_unpickled = True",))
 
 
-def _session(transport: PQCTransportLayer) -> None:
-    asyncio.run(transport.establish_session(b"server-public-key"))
+def _handshake(backend, signature="ML-DSA-65"):
+    kem = get_kem("X25519-ML-KEM-768", backend)
+    signer = get_signer(signature, backend)
+    server_kem_pk, server_kem_sk = kem.generate_keypair()
+    server_sig_pk, server_sig_sk = signer.generate_keypair()
+    client_pk, client_sk = signer.generate_keypair()
+    server = ServerIdentity(server_kem_pk, server_sig_pk)
+    hello, pending = initiate(
+        ClientCredentials("hospital_A", client_sk), server, kem=kem, signer=signer
+    )
+    server_session, reply = accept(
+        hello,
+        kem=kem,
+        signer=signer,
+        server=server,
+        kem_secret_key=server_kem_sk,
+        signing_secret_key=server_sig_sk,
+        client_public_key={"hospital_A": client_pk}.get,
+    )
+    return hello, pending.finish(reply), server_session, kem, signer
 
 
 @SIMULATED
@@ -41,15 +67,13 @@ def test_kem_shared_secret_cannot_be_derived_from_public_key():
     assert shared_secret != hashlib.sha256(keypair.public_key + b"simulated_encap").digest()
 
 
-@SIMULATED
-def test_received_weights_are_never_unpickled():
-    transport = PQCTransportLayer("hospital_A")
-    _session(transport)
-    frame = transport._encrypt(
-        zlib.compress(pickle.dumps(_SetsBuiltinsFlag())), context=b"weight_encryption"
-    )
+def test_received_weights_are_never_unpickled(backend):
+    _, client, server, _, _ = _handshake(backend)
+    spec = ModelSpec((TensorSpec("w", (2,), "float32"),))
+    frame = client.seal(pickle.dumps(_SetsBuiltinsFlag()))
 
-    transport.decrypt_weights(frame)
+    with pytest.raises(WeightFormatError):
+        decode_weights(spec, server.open(frame))
     executed = getattr(builtins, "_qedge_unpickled", False)
     if executed:
         del builtins._qedge_unpickled
@@ -57,43 +81,35 @@ def test_received_weights_are_never_unpickled():
     assert not executed
 
 
-@SIMULATED
 def test_transport_does_not_default_to_simulated_crypto():
-    assert PQCTransportLayer("hospital_A").use_simulation is False
+    for function in (transport.initiate, transport.accept):
+        parameters = inspect.signature(function).parameters
+        assert parameters["kem"].default is inspect.Parameter.empty
+        assert parameters["signer"].default is inspect.Parameter.empty
+    assert "simulat" not in inspect.getsource(transport).lower()
 
 
-@SIMULATED
-def test_handshake_carries_the_kem_ciphertext_to_the_server():
-    transport = PQCTransportLayer("hospital_A")
-    _session(transport)
+def test_handshake_carries_the_kem_ciphertext_to_the_server(backend):
+    hello, client, server, kem, _ = _handshake(backend)
 
-    assert getattr(transport.session, "kem_ciphertext", b"")
-
-
-@SIMULATED
-def test_replayed_frame_is_rejected():
-    transport = PQCTransportLayer("hospital_A")
-    _session(transport)
-    frame = transport.create_authenticated_message(b"update")
-    transport.parse_authenticated_message(frame)
-
-    with pytest.raises(ValueError):
-        transport.parse_authenticated_message(frame)
+    assert len(hello) > HEADER_SIZE + kem.ciphertext_size
+    assert server.open(client.seal(b"round 1 update")) == b"round 1 update"
+    assert client.open(server.seal(b"round 2 model")) == b"round 2 model"
 
 
-@SIMULATED
-def test_frame_signature_length_comes_from_the_signature_scheme():
-    transport = PQCTransportLayer("hospital_A")
-    _session(transport)
-    ml_dsa_65_signature_size = 3309
-    transport.sign = lambda data: (hmac.new(b"k", data, hashlib.sha512).digest() * 52)[
-        :ml_dsa_65_signature_size
-    ]
-    transport.verify = lambda data, signature, public_key: (
-        len(signature) == ml_dsa_65_signature_size
-    )
-    frame = transport.create_authenticated_message(b"update")
+def test_replayed_frame_is_rejected(backend):
+    _, client, server, _, _ = _handshake(backend)
+    frame = client.seal(b"update")
+    server.open(frame)
 
-    payload, _ = transport.parse_authenticated_message(frame)
+    with pytest.raises(ReplayError):
+        server.open(frame)
 
-    assert payload == b"update"
+
+@pytest.mark.parametrize(("signature", "size"), [("ML-DSA-65", 3309), ("ML-DSA-87", 4627)])
+def test_frame_signature_length_comes_from_the_signature_scheme(signature, size):
+    hello, client, server, kem, signer = _handshake("pure", signature)
+
+    assert signer.signature_size == size
+    assert len(hello) == HEADER_SIZE + 2 + len(b"hospital_A") + kem.ciphertext_size + size
+    assert server.open(client.seal(b"update")) == b"update"
