@@ -10,8 +10,6 @@ from qedge.fl.remote import RemoteClient, RemoteError
 from qedge.fl.weights import ModelSpec, TensorSpec
 from qedge.server.app import create_app
 
-AUDIT = pytest.mark.xfail(strict=True, reason="backend audit finding")
-
 
 @pytest.fixture
 def client(settings):
@@ -62,11 +60,18 @@ def test_unauthenticated_requests_cannot_run_circuits(client):
     assert client.get("/fl/metrics").status_code == 404
 
 
-@AUDIT
-def test_quantum_jobs_bound_the_number_of_qubits(client, headers):
-    job = {"circuit_type": "vqc", "parameters": {"n_qubits": 30}, "shots": 100}
-
-    assert client.post("/quantum/submit-job", json=job, headers=headers).status_code == 422
+@pytest.mark.parametrize(
+    "job",
+    [
+        {"n_qubits": 30, "n_layers": 2},
+        {"n_qubits": 4, "n_layers": 50},
+        {"n_qubits": 4, "n_layers": 2, "shots": 10**6},
+        {"n_qubits": 2, "n_layers": 1, "features": [0.1, 0.2, 0.3]},
+    ],
+)
+def test_quantum_jobs_bound_the_number_of_qubits(client, headers, job):
+    assert client.post("/quantum/jobs", json=job, headers=headers).status_code == 422
+    assert client.post("/quantum/submit-job", json=job, headers=headers).status_code == 404
 
 
 @pytest.fixture
@@ -120,7 +125,6 @@ def test_clients_cannot_trigger_aggregation(client, headers):
     assert client.post("/admin/rounds", json=body, headers=headers).status_code == 403
 
 
-@AUDIT
 def test_celery_routes_and_beat_name_registered_tasks():
     from qedge.server.worker import celery_app
 
@@ -130,3 +134,14 @@ def test_celery_routes_and_beat_name_registered_tasks():
 
     assert routed <= names
     assert scheduled <= names
+
+
+def test_failed_tasks_end_in_failure_state():
+    from qedge.server.worker import run_circuit
+
+    failed = run_circuit.apply(kwargs={"n_qubits": 99, "n_layers": 1, "features": []})
+    ok = run_circuit.apply(kwargs={"n_qubits": 2, "n_layers": 1, "features": [0.3], "seed": 0})
+
+    assert failed.failed()
+    assert ok.successful()
+    assert abs(sum(ok.result["probabilities"]) - 1.0) < 1e-9

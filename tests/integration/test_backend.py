@@ -27,11 +27,17 @@ def test_timing_header_is_present(client):
     assert "X-Process-Time" in client.get("/").headers
 
 
-def test_submit_quantum_job(client, headers):
-    job = {"circuit_type": "vqc", "parameters": {"n_qubits": 4}, "shots": 1024}
-    with patch("qedge.server.app.submit_quantum_aggregation") as task:
+def test_circuit_job_is_queued_on_celery(client, headers):
+    job = {"n_qubits": 4, "n_layers": 2, "features": [0.1, 0.2]}
+    with patch("qedge.server.app.run_circuit") as task:
         task.delay.return_value.id = "job-1"
-        response = client.post("/quantum/submit-job", json=job, headers=headers)
+        response = client.post("/quantum/jobs", json=job, headers=headers)
 
-    assert response.status_code == 200
-    assert response.json()["job_id"] == "job-1"
+    assert response.status_code == 202
+    assert response.json() == {
+        "job_id": "job-1",
+        "status": "PENDING",
+        "result": None,
+        "error": None,
+    }
+    task.delay.assert_called_once_with(4, 2, [0.1, 0.2], None, None)

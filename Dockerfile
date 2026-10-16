@@ -45,5 +45,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 CMD ["uvicorn", "qedge.server.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 
 FROM base AS worker
-# Task names do not match task_routes yet, so tasks land on the default "celery" queue.
-CMD ["celery", "--app", "qedge.server.worker", "worker", "--loglevel=INFO", "--queues", "celery,quantum,federated"]
+CMD ["celery", "--app", "qedge.server.worker", "worker", "--loglevel=INFO", "--queues", "quantum"]

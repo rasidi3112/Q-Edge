@@ -62,7 +62,13 @@ from qedge.server.rounds import (
     RoundService,
 )
 from qedge.server.settings import Settings
-from qedge.server.worker import get_task_status, submit_quantum_aggregation
+from qedge.server.worker import (
+    MAX_LAYERS,
+    MAX_QUBITS,
+    MAX_SHOTS,
+    get_task_status,
+    run_circuit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,20 +139,21 @@ class RoundRequest(BaseModel):
     deadline_seconds: float | None = Field(None, gt=0, le=7 * 86_400)
 
 
-class QuantumJobSubmission(BaseModel):
-    """Parameters for a background aggregation job on the local simulator."""
+class CircuitJob(BaseModel):
+    """A bounded circuit evaluation for the Celery worker."""
 
-    circuit_type: str = Field(..., description="Type of quantum circuit")
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    shots: int = Field(default=1024, ge=1, le=10000)
+    n_qubits: int = Field(ge=2, le=MAX_QUBITS)
+    n_layers: int = Field(ge=1, le=MAX_LAYERS)
+    features: list[float] = Field(default_factory=list, max_length=MAX_QUBITS)
+    shots: int | None = Field(None, ge=1, le=MAX_SHOTS)
+    seed: int | None = None
 
 
-class QuantumJobStatus(BaseModel):
-    """Celery task state of a submitted job."""
+class JobStatus(BaseModel):
+    """Celery state of a job; ``result`` or ``error`` once it finished."""
 
     job_id: str
     status: str
-    progress: float
     result: dict[str, Any] | None = None
     error: str | None = None
 
@@ -532,29 +539,28 @@ def round_events(
     )
 
 
-@router.post("/quantum/submit-job", response_model=QuantumJobStatus, tags=["Quantum Computing"])
-def submit_quantum_job(
-    job: QuantumJobSubmission, principal: Principal = Depends(require_client)
-) -> QuantumJobStatus:
-    """Queue a background aggregation job on Celery."""
-    task = submit_quantum_aggregation.delay(
-        circuit_type=job.circuit_type, parameters=job.parameters, shots=job.shots
-    )
-    return QuantumJobStatus(job_id=task.id, status="pending", progress=0.0)
+@router.post(
+    "/quantum/jobs",
+    response_model=JobStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Quantum Computing"],
+)
+def submit_circuit_job(
+    job: CircuitJob, principal: Principal = Depends(require_client)
+) -> JobStatus:
+    """Queue a circuit evaluation on the ``quantum`` Celery queue."""
+    if len(job.features) > job.n_qubits:
+        raise HTTPException(422, "More features than qubits")
+    task = run_circuit.delay(job.n_qubits, job.n_layers, job.features, job.shots, job.seed)
+    return JobStatus(job_id=task.id, status="PENDING")
 
 
-@router.get("/quantum/job/{job_id}", response_model=QuantumJobStatus, tags=["Quantum Computing"])
-def get_quantum_job_status(
-    job_id: str, principal: Principal = Depends(require_client)
-) -> QuantumJobStatus:
+@router.get("/quantum/jobs/{job_id}", response_model=JobStatus, tags=["Quantum Computing"])
+def get_circuit_job(job_id: str, principal: Principal = Depends(require_client)) -> JobStatus:
     """Return the Celery state of a job."""
-    status_info = get_task_status(job_id)
-    return QuantumJobStatus(
-        job_id=job_id,
-        status=status_info["status"],
-        progress=status_info.get("progress", 0.0),
-        result=status_info.get("result"),
-        error=status_info.get("error"),
+    info = get_task_status(job_id)
+    return JobStatus(
+        job_id=job_id, status=info["status"], result=info.get("result"), error=info.get("error")
     )
 
 
