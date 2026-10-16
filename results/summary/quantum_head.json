@@ -1,0 +1,398 @@
+{
+  "description": "RQ1: a VQC head against a classical head of matched size under non-IID data.",
+  "results": [
+    {
+      "dataset": "breast_cancer",
+      "alpha": 0.1,
+      "condition": "classical-head",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.01826021567454816
+      },
+      "per_seed": [
+        0.9473684430122375,
+        0.9736841917037964,
+        0.9824561476707458
+      ],
+      "seconds_mean": 0.8185810556678916,
+      "model": {
+        "head_parameters": 20,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 0.1,
+      "condition": "vqc",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.031627613039793376
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9298245906829834,
+        0.9912280440330505
+      ],
+      "seconds_mean": 2.343282458333609,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 0.1,
+      "condition": "vqc-noise-0.01",
+      "final_accuracy": {
+        "mean": 0.9298245509465536,
+        "std": 0.09158161495950748
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.8245614171028137,
+        0.9912280440330505
+      ],
+      "seconds_mean": 14.101389402998999,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 0.1,
+      "condition": "vqc-noise-0.01-zne",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.031627613039793376
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9298245906829834,
+        0.9912280440330505
+      ],
+      "seconds_mean": 122.30898686133393,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": [
+          1.0,
+          3.0,
+          5.0
+        ]
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 1.0,
+      "condition": "classical-head",
+      "final_accuracy": {
+        "mean": 0.9736841917037964,
+        "std": 0.01754385232925415
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9736841917037964,
+        0.9912280440330505
+      ],
+      "seconds_mean": 0.11464743033381335,
+      "model": {
+        "head_parameters": 20,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 1.0,
+      "condition": "vqc",
+      "final_accuracy": {
+        "mean": 0.9766081770261129,
+        "std": 0.018260225218929886
+      },
+      "per_seed": [
+        0.9824561476707458,
+        0.9561403393745422,
+        0.9912280440330505
+      ],
+      "seconds_mean": 2.4606059586682627,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 1.0,
+      "condition": "vqc-noise-0.01",
+      "final_accuracy": {
+        "mean": 0.9736841917037964,
+        "std": 0.01754385232925415
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9561403393745422,
+        0.9912280440330505
+      ],
+      "seconds_mean": 14.606006347329336,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "breast_cancer",
+      "alpha": 1.0,
+      "condition": "vqc-noise-0.01-zne",
+      "final_accuracy": {
+        "mean": 0.9766081770261129,
+        "std": 0.018260225218929886
+      },
+      "per_seed": [
+        0.9824561476707458,
+        0.9561403393745422,
+        0.9912280440330505
+      ],
+      "seconds_mean": 120.47333609733323,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": [
+          1.0,
+          3.0,
+          5.0
+        ]
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 0.1,
+      "condition": "classical-head",
+      "final_accuracy": {
+        "mean": 0.6425925890604655,
+        "std": 0.12501028791720148
+      },
+      "per_seed": [
+        0.7666666507720947,
+        0.644444465637207,
+        0.5166666507720947
+      ],
+      "seconds_mean": 0.3011081390019778,
+      "model": {
+        "head_parameters": 20,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 0.1,
+      "condition": "vqc",
+      "final_accuracy": {
+        "mean": 0.4861111243565877,
+        "std": 0.09308665023536226
+      },
+      "per_seed": [
+        0.5777778029441833,
+        0.4888888895511627,
+        0.3916666805744171
+      ],
+      "seconds_mean": 7.044457958332107,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 0.1,
+      "condition": "vqc-noise-0.01",
+      "final_accuracy": {
+        "mean": 0.49629629651705426,
+        "std": 0.08630503335753027
+      },
+      "per_seed": [
+        0.5666666626930237,
+        0.5222222208976746,
+        0.4000000059604645
+      ],
+      "seconds_mean": 42.35543734733559,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 0.1,
+      "condition": "vqc-noise-0.01-zne",
+      "final_accuracy": {
+        "mean": 0.49074074625968933,
+        "std": 0.08357989339162919
+      },
+      "per_seed": [
+        0.5777778029441833,
+        0.4833333194255829,
+        0.41111111640930176
+      ],
+      "seconds_mean": 363.2721129169998,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": [
+          1.0,
+          3.0,
+          5.0
+        ]
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 1.0,
+      "condition": "classical-head",
+      "final_accuracy": {
+        "mean": 0.6851851940155029,
+        "std": 0.14343486487114898
+      },
+      "per_seed": [
+        0.8222222328186035,
+        0.6972222328186035,
+        0.5361111164093018
+      ],
+      "seconds_mean": 0.2931492500016854,
+      "model": {
+        "head_parameters": 20,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 1.0,
+      "condition": "vqc",
+      "final_accuracy": {
+        "mean": 0.5138888855775198,
+        "std": 0.060921429676316044
+      },
+      "per_seed": [
+        0.5805555582046509,
+        0.4611110985279083,
+        0.5
+      ],
+      "seconds_mean": 6.978885486001673,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 1.0,
+      "condition": "vqc-noise-0.01",
+      "final_accuracy": {
+        "mean": 0.485185186068217,
+        "std": 0.10020554409001477
+      },
+      "per_seed": [
+        0.5888888835906982,
+        0.3888888955116272,
+        0.47777777910232544
+      ],
+      "seconds_mean": 41.93461431933247,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": null
+      }
+    },
+    {
+      "dataset": "digits",
+      "alpha": 1.0,
+      "condition": "vqc-noise-0.01-zne",
+      "final_accuracy": {
+        "mean": 0.5120370288689932,
+        "std": 0.05789073620877494
+      },
+      "per_seed": [
+        0.574999988079071,
+        0.4611110985279083,
+        0.5
+      ],
+      "seconds_mean": 358.3604411946653,
+      "model": {
+        "head_parameters": 24,
+        "vqc_parameters": 24,
+        "zne_achieved_scale_factors": [
+          1.0,
+          3.0,
+          5.0
+        ]
+      }
+    }
+  ],
+  "config": {
+    "output": "results/summary/quantum_head.json",
+    "datasets": [
+      "breast_cancer",
+      "digits"
+    ],
+    "alphas": [
+      0.1,
+      1.0
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "clients": 5,
+    "rounds": 15,
+    "head": {
+      "n_qubits": 4,
+      "n_layers": 2,
+      "encoder_hidden": 8
+    },
+    "conditions": [
+      {
+        "name": "classical-head",
+        "model": "classical-head"
+      },
+      {
+        "name": "vqc",
+        "model": "hybrid-vqc"
+      },
+      {
+        "name": "vqc-noise-0.01",
+        "model": "hybrid-vqc",
+        "noise": 0.01
+      },
+      {
+        "name": "vqc-noise-0.01-zne",
+        "model": "hybrid-vqc",
+        "noise": 0.01,
+        "zne": "richardson"
+      }
+    ]
+  },
+  "environment": {
+    "python": "3.13.5",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "packages": {
+      "q-edge": "0.2.0.dev0",
+      "numpy": "2.5.4",
+      "torch": "2.14.1",
+      "scikit-learn": "1.9.1",
+      "pennylane": "0.45.1",
+      "flwr": "1.40.0"
+    }
+  }
+}

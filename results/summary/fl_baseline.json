@@ -1,18 +1,5 @@
 {
-  "description": "Final test accuracy of each strategy under Dirichlet label skew.",
-  "setup": {
-    "clients": 10,
-    "rounds": 30,
-    "local_epochs": 1,
-    "client_lr": 0.1,
-    "server_lr": 0.05,
-    "fedprox_mu": 0.01,
-    "seeds": [
-      0,
-      1,
-      2
-    ]
-  },
+  "description": "Final accuracy of each strategy under Dirichlet label skew.",
   "results": [
     {
       "dataset": "breast_cancer",
@@ -28,7 +15,7 @@
         0.9736841917037964,
         0.9736841917037964
       ],
-      "seconds_mean": 0.6667991113329966
+      "seconds_mean": 0.6840381389968874
     },
     {
       "dataset": "breast_cancer",
@@ -44,7 +31,7 @@
         0.9824561476707458,
         0.9824561476707458
       ],
-      "seconds_mean": 0.15502043066711244
+      "seconds_mean": 0.14838622233219212
     },
     {
       "dataset": "breast_cancer",
@@ -60,7 +47,7 @@
         0.9736841917037964,
         0.9824561476707458
       ],
-      "seconds_mean": 0.15496973600117295
+      "seconds_mean": 0.14723920799830617
     },
     {
       "dataset": "breast_cancer",
@@ -76,7 +63,7 @@
         0.9736841917037964,
         0.9736841917037964
       ],
-      "seconds_mean": 0.20173256933291364
+      "seconds_mean": 0.20038177799627496
     },
     {
       "dataset": "breast_cancer",
@@ -92,7 +79,7 @@
         0.9824561476707458,
         0.9824561476707458
       ],
-      "seconds_mean": 0.1953027223329021
+      "seconds_mean": 0.18583913900026042
     },
     {
       "dataset": "breast_cancer",
@@ -108,7 +95,7 @@
         0.9736841917037964,
         0.9824561476707458
       ],
-      "seconds_mean": 0.1947935413348508
+      "seconds_mean": 0.17623138932928364
     },
     {
       "dataset": "breast_cancer",
@@ -124,7 +111,7 @@
         0.9824561476707458,
         0.9912280440330505
       ],
-      "seconds_mean": 0.1642558750002839
+      "seconds_mean": 0.14994361166463932
     },
     {
       "dataset": "breast_cancer",
@@ -140,7 +127,7 @@
         0.9824561476707458,
         0.9824561476707458
       ],
-      "seconds_mean": 0.15145281933412966
+      "seconds_mean": 0.145911903004162
     },
     {
       "dataset": "breast_cancer",
@@ -156,7 +143,7 @@
         0.9824561476707458,
         0.9824561476707458
       ],
-      "seconds_mean": 0.14332512499944036
+      "seconds_mean": 0.13730602766978942
     },
     {
       "dataset": "breast_cancer",
@@ -172,7 +159,7 @@
         0.9824561476707458,
         0.9912280440330505
       ],
-      "seconds_mean": 0.16237666666711448
+      "seconds_mean": 0.14983234733275216
     },
     {
       "dataset": "breast_cancer",
@@ -188,7 +175,7 @@
         0.9824561476707458,
         0.9824561476707458
       ],
-      "seconds_mean": 0.1597963886645933
+      "seconds_mean": 0.14518023600006322
     },
     {
       "dataset": "breast_cancer",
@@ -204,7 +191,7 @@
         0.9824561476707458,
         0.9824561476707458
       ],
-      "seconds_mean": 0.13837238866714566
+      "seconds_mean": 0.14245491666952148
     },
     {
       "dataset": "digits",
@@ -220,7 +207,7 @@
         0.949999988079071,
         0.9333333373069763
       ],
-      "seconds_mean": 0.4897681666673937
+      "seconds_mean": 0.46421818033316714
     },
     {
       "dataset": "digits",
@@ -236,7 +223,7 @@
         0.949999988079071,
         0.9555555582046509
       ],
-      "seconds_mean": 0.4968776943314879
+      "seconds_mean": 0.45738963900172774
     },
     {
       "dataset": "digits",
@@ -252,7 +239,7 @@
         0.9583333134651184,
         0.949999988079071
       ],
-      "seconds_mean": 0.4962180273323611
+      "seconds_mean": 0.4689008749992354
     },
     {
       "dataset": "digits",
@@ -268,7 +255,7 @@
         0.949999988079071,
         0.9333333373069763
       ],
-      "seconds_mean": 0.7369231943327273
+      "seconds_mean": 0.7066411393340483
     },
     {
       "dataset": "digits",
@@ -284,7 +271,7 @@
         0.949999988079071,
         0.9555555582046509
       ],
-      "seconds_mean": 0.7368194863326304
+      "seconds_mean": 0.7095304169997689
     },
     {
       "dataset": "digits",
@@ -300,7 +287,7 @@
         0.9583333134651184,
         0.949999988079071
       ],
-      "seconds_mean": 0.7160186943328881
+      "seconds_mean": 0.7008698890009933
     },
     {
       "dataset": "digits",
@@ -316,7 +303,7 @@
         0.9638888835906982,
         0.9444444179534912
       ],
-      "seconds_mean": 0.4917072500005209
+      "seconds_mean": 0.4604419440026201
     },
     {
       "dataset": "digits",
@@ -332,7 +319,7 @@
         0.9555555582046509,
         0.9611111283302307
       ],
-      "seconds_mean": 0.4803863606660646
+      "seconds_mean": 0.46933740233119653
     },
     {
       "dataset": "digits",
@@ -348,7 +335,7 @@
         0.9694444537162781,
         0.9555555582046509
       ],
-      "seconds_mean": 0.4822885276674545
+      "seconds_mean": 0.4607977780008999
     },
     {
       "dataset": "digits",
@@ -364,7 +351,7 @@
         0.9638888835906982,
         0.9472222328186035
       ],
-      "seconds_mean": 0.49025733333231375
+      "seconds_mean": 0.4644920413362949
     },
     {
       "dataset": "digits",
@@ -380,7 +367,7 @@
         0.9611111283302307,
         0.9611111283302307
       ],
-      "seconds_mean": 0.48503483333358116
+      "seconds_mean": 0.4673175413336139
     },
     {
       "dataset": "digits",
@@ -396,9 +383,40 @@
         0.9694444537162781,
         0.9555555582046509
       ],
-      "seconds_mean": 0.5005999999993946
+      "seconds_mean": 0.4613660136625792
     }
   ],
+  "config": {
+    "output": "results/summary/fl_baseline.json",
+    "setups": [
+      [
+        "breast_cancer",
+        "logreg"
+      ],
+      [
+        "digits",
+        "mlp"
+      ]
+    ],
+    "strategies": [
+      "fedavg",
+      "fedprox",
+      "fedadam",
+      "fedyogi"
+    ],
+    "alphas": [
+      0.1,
+      0.5,
+      100.0
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "clients": 10,
+    "rounds": 30
+  },
   "environment": {
     "python": "3.13.5",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",

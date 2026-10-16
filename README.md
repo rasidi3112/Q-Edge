@@ -126,10 +126,25 @@ Dependencies are declared only in `pyproject.toml`. Optional extras:
 |-------|------|
 | `server` | FastAPI server and Celery worker |
 | `fl` | PyTorch, Flower, scikit-learn and PyYAML for `qedge simulate` and the Flower apps |
+| `report` | matplotlib for `python -m experiments.report` |
 | `flower-sim` | Flower's Ray simulation engine, needed only for `flwr run` |
 | `pqc` | liboqs-python (needs the liboqs C library) |
 | `pqc-pure` | kyber-py and dilithium-py: pure Python, not constant-time, tests only |
 | `dev` | pytest, ruff, mypy, pre-commit |
+
+### Reproducing the results
+
+```bash
+pip install -e ".[fl,report,pqc]"   # pqc (liboqs) for the benchmarks as configured
+make reproduce
+```
+
+`make reproduce` runs every script in `experiments/` and `bench/` with the
+grids in `experiments/configs/`, writes `results/summary/*.json`, and then
+`python -m experiments.report` turns them into
+[`docs/results.md`](docs/results.md) and `docs/figures/`. It took about 62
+minutes on a laptop CPU, 55 of them for the ZNE runs of the RQ1 experiment;
+`python -m experiments.run_all --skip quantum_head` takes about 7 minutes.
 
 ### Development
 
@@ -439,8 +454,9 @@ features -> Linear -> ReLU -> Linear -> pi*tanh -> AngleEmbedding (RY)
 ```
 
 `hybrid-vqc` runs the circuit through `qml.qnn.TorchLayer`;
-`classical-head` swaps it for a tanh MLP with about the same number of
-parameters (4 qubits, 2 layers: 24 vs 22). Noise is attached to the device
+`classical-head` swaps it for a tanh layer or MLP that is never narrower
+than the qubit count, with about as many parameters (4 qubits, 2 layers:
+24 vs 20). Noise is attached to the device
 (`default.mixed`), so it also acts on folded gates. Without shots, gradients
 come from backpropagation through the simulator; with `--shots` from the
 parameter-shift rule ([ADR 0009](docs/decisions/0009-noise-and-zne-in-training.md)).

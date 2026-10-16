@@ -1,38 +1,5 @@
 {
   "description": "Final accuracy under malicious clients for each aggregation rule.",
-  "setup": {
-    "clients": 10,
-    "rounds": 30,
-    "alpha": 0.5,
-    "seeds": [
-      0,
-      1,
-      2
-    ],
-    "attack_scales": {
-      "scaling": "number of clients",
-      "random_noise": 1.0,
-      "fake_samples": 100
-    },
-    "defense_options": {
-      "trimmed_mean": {
-        "beta": 0.2
-      },
-      "krum": {
-        "f": 3
-      },
-      "multi_krum": {
-        "f": 3,
-        "m": 7
-      },
-      "norm_clip": {
-        "clip": "median delta norm"
-      },
-      "bounded": {
-        "cap": 3.0
-      }
-    }
-  },
   "results": [
     {
       "dataset": "breast_cancer",
@@ -2765,6 +2732,48 @@
       ]
     }
   ],
+  "config": {
+    "output": "results/summary/robustness.json",
+    "setups": [
+      [
+        "breast_cancer",
+        "logreg"
+      ],
+      [
+        "digits",
+        "mlp"
+      ]
+    ],
+    "attacks": [
+      "label_flip",
+      "scaling",
+      "random_noise",
+      "fake_samples"
+    ],
+    "fractions": [
+      0.0,
+      0.1,
+      0.2,
+      0.3
+    ],
+    "rules": [
+      null,
+      "median",
+      "trimmed_mean",
+      "krum",
+      "multi_krum",
+      "norm_clip",
+      "bounded"
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "clients": 10,
+    "rounds": 30,
+    "alpha": 0.5
+  },
   "environment": {
     "python": "3.13.5",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",

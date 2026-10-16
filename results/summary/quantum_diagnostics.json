@@ -64,6 +64,12 @@
   },
   "expressibility_kl": {
     "n_qubits": 4,
+    "layers": [
+      1,
+      2,
+      3,
+      4
+    ],
     "pairs": 500,
     "bins": 75,
     "strongly_entangling": {
@@ -77,6 +83,32 @@
       "2": 0.034253454697732874,
       "3": 0.02352187875063601,
       "4": 0.04029030901206924
+    }
+  },
+  "config": {
+    "output": "results/summary/quantum_diagnostics.json",
+    "widths": [
+      2,
+      4,
+      6,
+      8
+    ],
+    "gradient": {
+      "layers": 8,
+      "samples": 200
+    },
+    "kernel": {
+      "samples": 40
+    },
+    "expressibility": {
+      "n_qubits": 4,
+      "layers": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "pairs": 500
     }
   },
   "environment": {

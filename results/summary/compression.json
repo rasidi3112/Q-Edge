@@ -1,18 +1,5 @@
 {
   "description": "Upload bytes vs final accuracy for top-k compression with error feedback.",
-  "setup": {
-    "strategy": "fedavg",
-    "clients": 10,
-    "rounds": 30,
-    "alpha": 0.5,
-    "seeds": [
-      0,
-      1,
-      2
-    ],
-    "bytes_per_kept_entry": 8,
-    "bytes_per_dense_entry": 4
-  },
   "results": [
     {
       "dataset": "breast_cancer",
@@ -195,6 +182,35 @@
       ]
     }
   ],
+  "config": {
+    "output": "results/summary/compression.json",
+    "setups": [
+      [
+        "breast_cancer",
+        "logreg"
+      ],
+      [
+        "digits",
+        "mlp"
+      ]
+    ],
+    "ratios": [
+      null,
+      0.5,
+      0.2,
+      0.1,
+      0.05,
+      0.01
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "clients": 10,
+    "rounds": 30,
+    "alpha": 0.5
+  },
   "environment": {
     "python": "3.13.5",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",

@@ -1,16 +1,6 @@
 {
   "description": "Reproduce the accuracy cost of the removed \"quantum\" weight mixing (finding F1).",
   "setup": {
-    "dataset": "breast_cancer",
-    "model": "logreg",
-    "clients": 5,
-    "rounds": 15,
-    "alpha": 0.5,
-    "seeds": [
-      0,
-      1,
-      2
-    ],
     "classical_weight": 0.7,
     "n_qubits": 8
   },
@@ -155,6 +145,17 @@
         ]
       }
     ]
+  },
+  "config": {
+    "output": "results/summary/ablation_quantum_weight_mixing.json",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "clients": 5,
+    "rounds": 15,
+    "alpha": 0.5
   },
   "environment": {
     "python": "3.13.5",
