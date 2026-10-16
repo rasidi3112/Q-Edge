@@ -38,11 +38,7 @@ from qedge.fl.aggregator import (
     QuantumAggregatorConfig,
     QuantumGlobalAggregator,
 )
-from qedge.server.auth import (
-    PQCAuthMiddleware,
-    create_jwt_token,
-    verify_jwt_token,
-)
+from qedge.server.auth import PQCAuthMiddleware, TokenError, TokenIssuer
 from qedge.server.settings import Settings
 from qedge.server.worker import (
     get_task_status,
@@ -66,8 +62,7 @@ class ClientAuthResponse(BaseModel):
     """Access token and session id.
 
     ``server_public_key`` is the server's KEM public key in base64 (see
-    ``GET /crypto/keys``). ``expires_in`` is always 3600 regardless of the
-    token's ``exp``.
+    ``GET /crypto/keys``). ``expires_in`` is the token lifetime in seconds.
     """
 
     access_token: str
@@ -143,6 +138,7 @@ class ServerState:
     settings: Settings
     aggregator: QuantumGlobalAggregator
     keys: ServerKeys
+    tokens: TokenIssuer
     registered_clients: dict[str, dict[str, Any]] = field(default_factory=dict)
     current_round_updates: list[LocalModelUpdate] = field(default_factory=list)
 
@@ -247,18 +243,14 @@ async def register_client(
         "session_id": session_id,
     }
 
-    # Create JWT token
-    access_token = create_jwt_token(
-        client_id=registration.client_id,
-        session_id=session_id,
-    )
+    access_token, expires_in = state.tokens.issue(registration.client_id, "client")
 
     server_public_key = base64.b64encode(state.keys.kem_public_key).decode("ascii")
 
     return ClientAuthResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=3600,
+        expires_in=expires_in,
         server_public_key=server_public_key,
         session_id=session_id,
     )
@@ -273,29 +265,19 @@ async def get_current_client(
     Raises:
         HTTPException: 401 if the token is invalid or the client is unknown.
     """
-    token = credentials.credentials
-
     try:
-        payload = verify_jwt_token(token)
-        client_id = payload.get("client_id")
-
-        if client_id not in state.registered_clients:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Client not registered",
-            )
-
-        return {
-            "client_id": client_id,
-            "session_id": payload.get("session_id"),
-            **state.registered_clients[client_id],
-        }
-
-    except Exception as e:
+        claims = state.tokens.verify(credentials.credentials)
+    except TokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {e!s}",
-        ) from e
+            detail=f"Invalid token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    if claims.subject not in state.registered_clients:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Client not registered"
+        )
+    return {"client_id": claims.subject, **state.registered_clients[claims.subject]}
 
 
 # Federated Learning endpoints
@@ -509,7 +491,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         key directory or crypto backend is missing, so the server never runs
         without real keys.
     """
-    settings = Settings.from_env() if settings is None else settings
+    settings = Settings() if settings is None else settings
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -532,6 +514,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings=settings,
             aggregator=QuantumGlobalAggregator(config),
             keys=keys,
+            tokens=TokenIssuer.from_settings(settings),
         )
         logger.info("Q-Edge Backend started successfully")
         yield
@@ -603,7 +586,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
         factory=True,
         host=host,
         port=port,
-        reload=Settings.from_env().debug,
+        reload=Settings().debug,
         workers=1,
     )
 

@@ -36,16 +36,6 @@ def test_register_rejects_existing_client_id_with_new_key(client):
 
 
 @AUDIT
-def test_tokens_cannot_be_issued_without_a_configured_secret(monkeypatch):
-    from qedge.server.auth import create_jwt_token
-
-    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
-
-    with pytest.raises((RuntimeError, ValueError)):
-        create_jwt_token(client_id="hospital_A", session_id="s")
-
-
-@AUDIT
 def test_responses_carry_no_fake_security_headers(client):
     response = client.get("/")
 

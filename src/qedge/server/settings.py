@@ -1,68 +1,52 @@
-"""Server configuration read from environment variables."""
+"""Server configuration read from environment variables (pydantic-settings)."""
 
 from __future__ import annotations
 
-import json
-import os
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
-from qedge.crypto.backends import BACKENDS
+from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+MIN_JWT_SECRET_BYTES = 32
 
 
-@dataclass(frozen=True)
-class Settings:
+def _env(name: str) -> AliasChoices:
+    return AliasChoices(name)
+
+
+class Settings(BaseSettings):
     """Values the server reads at startup.
 
-    Attributes:
-        n_qubits: Qubits in the aggregator's circuits (``VQC_NUM_QUBITS``).
-        vqc_layers: Variational layers (``VQC_NUM_LAYERS``).
-        fl_min_clients: Queued updates required to aggregate (``FL_MIN_CLIENTS``).
-        cors_origins: Allowed CORS origins, a JSON list (``CORS_ORIGINS``).
-        rate_limit_requests: Value echoed in ``X-RateLimit-*`` headers; no limit
-            is enforced (``RATE_LIMIT_REQUESTS``).
-        debug: Enables uvicorn reload in `run_server` (``DEBUG_MODE``).
-        crypto_backend: ``"liboqs"`` or ``"pure"`` (``QEDGE_CRYPTO_BACKEND``).
-            The server does not start if the backend is missing.
-        key_dir: Directory written by ``qedge keys init`` (``QEDGE_KEY_DIR``).
-            The server does not start without it.
+    Every field reads the environment variable named in its alias; keyword
+    arguments use the field name. ``JWT_SECRET_KEY`` has no default.
 
     Raises:
-        ValueError: If ``crypto_backend`` is not a known backend.
+        pydantic.ValidationError: If ``JWT_SECRET_KEY`` is missing or shorter
+            than 32 bytes, or a value has the wrong type or range.
     """
 
-    n_qubits: int = 8
-    vqc_layers: int = 4
-    fl_min_clients: int = 1
-    cors_origins: tuple[str, ...] = ("http://localhost:3000",)
-    rate_limit_requests: int = 100
-    debug: bool = False
-    crypto_backend: str = "liboqs"
-    key_dir: Path | None = None
+    model_config = SettingsConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
-    def __post_init__(self) -> None:
-        if self.crypto_backend not in BACKENDS:
-            raise ValueError(f"Unknown crypto backend {self.crypto_backend!r}; expected {BACKENDS}")
+    jwt_secret: SecretStr = Field(validation_alias=_env("JWT_SECRET_KEY"))
+    jwt_ttl_seconds: int = Field(900, ge=60, le=86_400, validation_alias=_env("JWT_TTL_SECONDS"))
+    server_id: str = Field("qedge", min_length=1, validation_alias=_env("QEDGE_SERVER_ID"))
+    n_qubits: int = Field(8, ge=2, le=12, validation_alias=_env("VQC_NUM_QUBITS"))
+    vqc_layers: int = Field(4, ge=1, le=6, validation_alias=_env("VQC_NUM_LAYERS"))
+    fl_min_clients: int = Field(1, ge=1, validation_alias=_env("FL_MIN_CLIENTS"))
+    cors_origins: tuple[str, ...] = Field(
+        ("http://localhost:3000",), validation_alias=_env("CORS_ORIGINS")
+    )
+    rate_limit_requests: int = Field(100, validation_alias=_env("RATE_LIMIT_REQUESTS"))
+    debug: bool = Field(False, validation_alias=_env("DEBUG_MODE"))
+    crypto_backend: Literal["liboqs", "pure"] = Field(
+        "liboqs", validation_alias=_env("QEDGE_CRYPTO_BACKEND")
+    )
+    key_dir: Path | None = Field(None, validation_alias=_env("QEDGE_KEY_DIR"))
 
+    @field_validator("jwt_secret")
     @classmethod
-    def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
-        """Build settings from ``environ`` (default ``os.environ``).
-
-        Raises:
-            ValueError: If a numeric variable is not an integer, ``CORS_ORIGINS`` is
-                not valid JSON, or ``QEDGE_CRYPTO_BACKEND`` is unknown.
-        """
-        env = os.environ if environ is None else environ
-        raw_origins = env.get("CORS_ORIGINS", '["http://localhost:3000"]')
-        origins = json.loads(raw_origins) if raw_origins else []
-        return cls(
-            n_qubits=int(env.get("VQC_NUM_QUBITS", "8")),
-            vqc_layers=int(env.get("VQC_NUM_LAYERS", "4")),
-            fl_min_clients=int(env.get("FL_MIN_CLIENTS", "1")),
-            cors_origins=tuple(origins),
-            rate_limit_requests=int(env.get("RATE_LIMIT_REQUESTS", "100")),
-            debug=env.get("DEBUG_MODE", "false").lower() == "true",
-            crypto_backend=env.get("QEDGE_CRYPTO_BACKEND", "liboqs"),
-            key_dir=Path(env["QEDGE_KEY_DIR"]) if env.get("QEDGE_KEY_DIR") else None,
-        )
+    def _secret_is_long_enough(cls, value: SecretStr) -> SecretStr:
+        if len(value.get_secret_value().encode()) < MIN_JWT_SECRET_BYTES:
+            raise ValueError(f"JWT_SECRET_KEY must be at least {MIN_JWT_SECRET_BYTES} bytes")
+        return value

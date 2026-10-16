@@ -1,5 +1,4 @@
 import base64
-import dataclasses
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,24 +17,25 @@ REGISTRATION = {
 
 
 def test_server_refuses_to_start_without_a_key_directory(settings):
-    app = create_app(dataclasses.replace(settings, key_dir=None))
+    app = create_app(settings.model_copy(update={"key_dir": None}))
 
     with pytest.raises(KeyStoreError, match="QEDGE_KEY_DIR"), TestClient(app):
         pass
 
 
 def test_server_refuses_to_start_with_an_empty_key_directory(settings, tmp_path):
-    app = create_app(dataclasses.replace(settings, key_dir=tmp_path))
+    app = create_app(settings.model_copy(update={"key_dir": tmp_path}))
 
     with pytest.raises(KeyStoreError, match="qedge keys init"), TestClient(app):
         pass
 
 
-def test_unknown_backend_is_rejected_in_settings():
-    with pytest.raises(ValueError, match="crypto backend"):
-        Settings(crypto_backend="simulated")
-    with pytest.raises(ValueError, match="crypto backend"):
-        Settings.from_env({"QEDGE_CRYPTO_BACKEND": "simulated"})
+def test_unknown_backend_is_rejected_in_settings(settings, monkeypatch):
+    with pytest.raises(ValueError, match=r"crypto_backend|QEDGE_CRYPTO_BACKEND"):
+        Settings(jwt_secret=settings.jwt_secret, crypto_backend="simulated")
+    monkeypatch.setenv("QEDGE_CRYPTO_BACKEND", "simulated")
+    with pytest.raises(ValueError, match=r"crypto_backend|QEDGE_CRYPTO_BACKEND"):
+        Settings(jwt_secret=settings.jwt_secret)
 
 
 def test_crypto_keys_endpoint_serves_the_loaded_public_keys(settings):

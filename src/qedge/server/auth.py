@@ -1,76 +1,133 @@
-"""JWT handling and a request middleware.
+"""Access tokens and a request middleware.
 
-`PQCAuthMiddleware` does not verify signatures. JWTs fall back to a hardcoded
-secret when ``JWT_SECRET_KEY`` is unset. Post-quantum primitives live in
+`PQCAuthMiddleware` does not verify signatures. Post-quantum primitives live in
 `qedge.crypto`.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import time
-from datetime import datetime, timedelta
-from typing import Any, cast
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from fastapi import HTTPException, Request, status
+import jwt
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
-from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
+if TYPE_CHECKING:
+    from qedge.server.settings import Settings
+
 logger = logging.getLogger(__name__)
 
+SCOPES = ("client", "admin")
 
-def create_jwt_token(
-    client_id: str,
-    session_id: str,
-    expires_delta: timedelta | None = None,
-) -> str:
-    """Issue a JWT with ``client_id``, ``session_id``, ``iat`` and ``exp``.
 
-    Reads ``JWT_SECRET_KEY``, ``JWT_ALGORITHM`` (default HS256) and
-    ``JWT_EXPIRATION_MINUTES`` (default 30). The secret falls back to a hardcoded
-    development value.
+class TokenError(Exception):
+    """A bearer token is malformed, expired, or not issued by this server."""
+
+
+@dataclass(frozen=True)
+class TokenClaims:
+    """Verified claims of an access token."""
+
+    subject: str
+    scope: str
+    token_id: str
+    issued_at: int
+    expires_at: int
+
+
+class TokenIssuer:
+    """Issues and verifies short-lived HS256 access tokens.
+
+    Tokens carry ``iss`` (the server id), ``aud``, ``sub`` (the client id),
+    ``scope``, ``jti``, ``iat`` and ``exp``; all are required on verification.
+
+    Args:
+        secret: HMAC key, at least 32 bytes (enforced by `Settings`).
+        issuer: Server id written to and required in ``iss``.
+        ttl_seconds: Token lifetime; also reported as ``expires_in``.
+        clock: Source of the current Unix time in seconds.
     """
-    secret_key = os.getenv("JWT_SECRET_KEY", "development-secret-key-change-me")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
 
-    if expires_delta is None:
-        expires_delta = timedelta(minutes=int(os.getenv("JWT_EXPIRATION_MINUTES", "30")))
+    AUDIENCE = "qedge-api"
+    ALGORITHM = "HS256"
 
-    expire = datetime.utcnow() + expires_delta
+    def __init__(
+        self, secret: str, issuer: str, ttl_seconds: int, clock: Callable[[], float] = time.time
+    ) -> None:
+        self._secret = secret
+        self._issuer = issuer
+        self.ttl_seconds = ttl_seconds
+        self._clock = clock
 
-    to_encode = {
-        "client_id": client_id,
-        "session_id": session_id,
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "type": "access",
-    }
+    @classmethod
+    def from_settings(cls, settings: Settings) -> TokenIssuer:
+        """Build an issuer from the server settings."""
+        return cls(
+            settings.jwt_secret.get_secret_value(), settings.server_id, settings.jwt_ttl_seconds
+        )
 
-    return cast(str, jwt.encode(to_encode, secret_key, algorithm=algorithm))
+    def issue(self, subject: str, scope: str) -> tuple[str, int]:
+        """Return ``(token, expires_in_seconds)`` for ``subject`` with ``scope``.
 
+        Raises:
+            ValueError: If ``scope`` is not one of `SCOPES`.
+        """
+        if scope not in SCOPES:
+            raise ValueError(f"Unknown scope {scope!r}; expected {SCOPES}")
+        now = int(self._clock())
+        claims = {
+            "iss": self._issuer,
+            "aud": self.AUDIENCE,
+            "sub": subject,
+            "scope": scope,
+            "jti": uuid.uuid4().hex,
+            "iat": now,
+            "exp": now + self.ttl_seconds,
+        }
+        return jwt.encode(claims, self._secret, algorithm=self.ALGORITHM), self.ttl_seconds
 
-def verify_jwt_token(token: str) -> dict[str, Any]:
-    """Decode and verify a token from `create_jwt_token`.
+    def verify(self, token: str) -> TokenClaims:
+        """Check signature, issuer, audience, expiry and scope of ``token``.
 
-    Raises:
-        HTTPException: 401 if the signature or expiry check fails.
-    """
-    secret_key = os.getenv("JWT_SECRET_KEY", "development-secret-key-change-me")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-
-    try:
-        return cast(dict[str, Any], jwt.decode(token, secret_key, algorithms=[algorithm]))
-
-    except JWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {e!s}",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from e
+        Raises:
+            TokenError: If any check fails.
+        """
+        try:
+            claims = jwt.decode(
+                token,
+                self._secret,
+                algorithms=[self.ALGORITHM],
+                audience=self.AUDIENCE,
+                issuer=self._issuer,
+                # Expiry is checked below against the injected clock.
+                options={
+                    "require": ["iss", "aud", "sub", "jti", "iat", "exp"],
+                    "verify_exp": False,
+                    "verify_iat": False,
+                },
+                leeway=0,
+            )
+        except jwt.PyJWTError as exc:
+            raise TokenError(str(exc)) from exc
+        if claims.get("exp", 0) <= self._clock():
+            raise TokenError("Token has expired")
+        if claims.get("scope") not in SCOPES:
+            raise TokenError("Token has no valid scope")
+        return TokenClaims(
+            str(claims["sub"]),
+            str(claims["scope"]),
+            str(claims["jti"]),
+            int(claims["iat"]),
+            int(claims["exp"]),
+        )
 
 
 class PQCAuthMiddleware(BaseHTTPMiddleware):

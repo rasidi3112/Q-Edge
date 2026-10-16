@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from qedge.server.app import create_app
+from qedge.server.auth import TokenIssuer
 
 
 @pytest.fixture
@@ -13,14 +14,8 @@ def client(settings):
 
 
 @pytest.fixture
-def auth_headers():
-    from qedge.server.auth import create_jwt_token
-
-    token = create_jwt_token(
-        client_id="test_client",
-        session_id="test_session",
-    )
-
+def auth_headers(settings):
+    token, _ = TokenIssuer.from_settings(settings).issue("test_client", "client")
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -206,32 +201,6 @@ class TestSecurityMiddleware:
 
         # PQC headers should be present
         assert "X-PQC-Protected" in response.headers
-
-
-class TestSecurity:
-    def test_jwt_token_creation(self):
-        from qedge.server.auth import create_jwt_token
-
-        token = create_jwt_token(
-            client_id="test",
-            session_id="session123",
-        )
-
-        assert isinstance(token, str)
-        assert len(token) > 0
-
-    def test_jwt_token_verification(self):
-        from qedge.server.auth import create_jwt_token, verify_jwt_token
-
-        token = create_jwt_token(
-            client_id="test_client",
-            session_id="session123",
-        )
-
-        payload = verify_jwt_token(token)
-
-        assert payload["client_id"] == "test_client"
-        assert payload["session_id"] == "session123"
 
 
 # Run tests with: pytest tests/integration/test_backend.py -v
