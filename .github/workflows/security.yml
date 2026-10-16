@@ -1,4 +1,4 @@
-name: Security Scanning
+name: Security scanning
 
 on:
   schedule:
@@ -6,7 +6,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -14,120 +13,86 @@ permissions:
 
 jobs:
   secret-scan:
-    name: Secret Detection
+    name: Secret detection
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-
-      - name: TruffleHog Secret Scan
-        uses: trufflesecurity/trufflehog@main
+      - uses: trufflesecurity/trufflehog@v3.99.2
         with:
           extra_args: --only-verified
-
-      - name: GitLeaks Scan
-        uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dependency-audit:
-    name: Dependency Audit
+    name: Dependency audit
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
-          python-version: "3.11"
-
-      - name: Install pip-audit
-        run: pip install pip-audit
-
-      - name: Run pip-audit
-        run: pip-audit --strict
-        continue-on-error: true
-
-      - name: Install dependencies and check
-        run: |
-          pip install -e .
-          pip-audit --format=json > pip-audit-results.json || true
-
-      - name: Upload Audit Results
-        uses: actions/upload-artifact@v4
-        with:
-          name: pip-audit-results
-          path: pip-audit-results.json
+          python-version: "3.13"
+      - run: pip install -e ".[server]"
+      - run: pip freeze --exclude-editable > requirements-audit.txt
+      # Ignored advisories have no fixed release and are not reachable from this code:
+      #   PYSEC-2026-4298 (python-jose): HS256 forgery only when `algorithms` is not
+      #     restricted; verify_jwt_token passes a single algorithm.
+      #   PYSEC-2026-1325 (ecdsa, via python-jose): timing leak in ECDSA signing; no
+      #     ECDSA keys are used.
+      # Remove both when python-jose is replaced.
+      - run: >-
+          pipx run pip-audit==2.10.1 --strict --no-deps --disable-pip
+          -r requirements-audit.txt
+          --ignore-vuln PYSEC-2026-4298
+          --ignore-vuln PYSEC-2026-1325
 
   codeql:
-    name: CodeQL Analysis
+    name: CodeQL
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v7.0.1
+      - uses: github/codeql-action/init@v4.39.0
         with:
           languages: python
           queries: security-and-quality
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4.39.0
         with:
           category: "/language:python"
 
   bandit:
-    name: Bandit Security Scan
+    name: Bandit
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
-          python-version: "3.11"
-
-      - name: Install Bandit
-        run: pip install bandit[toml]
-
-      - name: Run Bandit
-        run: bandit -r src/ -f sarif -o bandit-results.sarif || true
-
-      - name: Upload Bandit SARIF
-        uses: github/codeql-action/upload-sarif@v3
+          python-version: "3.13"
+      - run: pip install "bandit[sarif,toml]"
+      # Findings are reported to code scanning instead of failing the job;
+      # --exit-zero still lets a crash of bandit itself fail it.
+      - run: bandit -r src/qedge --exit-zero -f sarif -o bandit-results.sarif
+      - uses: github/codeql-action/upload-sarif@v4.39.0
+        if: always()
         with:
           sarif_file: bandit-results.sarif
-        if: always()
 
   container-scan:
-    name: Container Security
+    name: Container scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
+    if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: docker build -t qedge-api:scan -f deploy/docker/Dockerfile.api .
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      - uses: actions/checkout@v7.0.1
+      - run: docker build --target api -t qedge-api:scan .
+      # Results go to code scanning; trivy's default exit code is 0.
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: 'qedge-api:scan'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
+          image-ref: qedge-api:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+      - uses: github/codeql-action/upload-sarif@v4.39.0
         if: always()
+        with:
+          sarif_file: trivy-results.sarif
