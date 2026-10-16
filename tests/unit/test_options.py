@@ -3,12 +3,7 @@
 import numpy as np
 import pytest
 
-from qedge.fl.aggregator import (
-    AggregationStrategy,
-    LocalModelUpdate,
-    QuantumAggregatorConfig,
-    QuantumGlobalAggregator,
-)
+from qedge.fl.strategies import SERVER_STRATEGIES, ServerStrategy
 from qedge.quantum.circuits import AnsatzType, VariationalQuantumCircuit, VQCConfig
 from qedge.quantum.kernels import FeatureMapType, QKAConfig, QuantumKernelAlignment
 from qedge.quantum.zne import MeasurementErrorMitigation
@@ -20,7 +15,8 @@ def _assert_pairwise_distinct(outputs):
         for second in members[i + 1 :]:
             a, b = np.asarray(outputs[first]), np.asarray(outputs[second])
             same = a.shape == b.shape and np.allclose(a, b)
-            assert not same, f"{first.name} and {second.name} compute the same result"
+            label = [getattr(m, "name", m) for m in (first, second)]
+            assert not same, f"{label[0]} and {label[1]} compute the same result"
 
 
 def test_every_ansatz_type_builds_a_distinct_circuit():
@@ -45,22 +41,16 @@ def test_every_feature_map_type_builds_a_distinct_kernel():
     _assert_pairwise_distinct(outputs)
 
 
-@pytest.mark.asyncio
-async def test_every_aggregation_strategy_has_its_own_rule():
+def test_every_aggregation_strategy_has_its_own_rule():
     rng = np.random.default_rng(0)
-    rounds = [
-        [LocalModelUpdate(f"c{i}", rng.normal(size=6), n_samples=10 + i) for i in range(3)]
-        for _ in range(2)
-    ]
+    rounds = [[({"w": rng.normal(size=6)}, 10 + i) for i in range(3)] for _ in range(3)]
     outputs = {}
-    for strategy in AggregationStrategy:
-        aggregator = QuantumGlobalAggregator(
-            QuantumAggregatorConfig(n_qubits=2, vqc_layers=1, aggregation_strategy=strategy),
-            seed=0,
-        )
+    for name in SERVER_STRATEGIES:
+        strategy = ServerStrategy(name)
+        weights = {"w": np.zeros(6)}
         for updates in rounds:
-            state = await aggregator.aggregate(updates, use_quantum=False)
-        outputs[strategy] = state.weights
+            weights = strategy.step(weights, updates)
+        outputs[name] = weights["w"]
     _assert_pairwise_distinct(outputs)
 
 

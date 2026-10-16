@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import asyncio
 import sys
 import time
 
@@ -199,85 +198,29 @@ def demo_error_mitigation():
     return zne
 
 
-async def demo_quantum_aggregation():
-    print_section("🌐 Demo 4: Federated Learning with Quantum Aggregation")
+def demo_federated_learning():
+    print_section("Demo 4: Federated learning on breast_cancer (simulated clients)")
 
-    from qedge.fl.aggregator import (
-        AggregationStrategy,
-        LocalModelUpdate,
-        QuantumAggregatorConfig,
-        QuantumGlobalAggregator,
+    try:
+        from qedge.fl.simulation import SimulationConfig, run_simulation
+    except ImportError as error:
+        print_status(f"Skipped: {error}", "warning")
+        return None
+
+    config = SimulationConfig(dataset="breast_cancer", clients=5, rounds=10, alpha=0.5)
+    print_status(
+        f"{config.clients} simulated clients, Dirichlet alpha={config.alpha}, "
+        f"{config.rounds} rounds of FedAvg on logistic regression",
+        "info",
     )
-
-    print_status("Initializing Quantum Global Aggregator...", "quantum")
-
-    config = QuantumAggregatorConfig(
-        n_qubits=8,
-        vqc_layers=4,
-        qka_layers=2,
-        aggregation_strategy=AggregationStrategy.FEDAVG,
-        use_error_mitigation=False,
-        classical_weight=0.7,
+    summary = run_simulation(config)
+    for row in summary["history"]:
+        print(f"     round {row['round']:2d}: test accuracy {row['test_accuracy']:.4f}")
+    print_status(
+        f"Final accuracy {summary['final_accuracy']:.4f} in {summary['seconds']:.2f} s",
+        "success",
     )
-
-    aggregator = QuantumGlobalAggregator(config, seed=42)
-
-    print_status(f"VQC: {config.n_qubits} qubits, {config.vqc_layers} layers", "info")
-    print_status("Aggregation: 70% classical + 30% quantum", "info")
-
-    n_clients = 5
-    n_rounds = 3
-
-    print_status(f"\nSimulating {n_clients} mobile clients over {n_rounds} rounds...", "mobile")
-
-    for round_num in range(n_rounds):
-        print(f"\n{Colors.BOLD}  📍 Round {round_num + 1}/{n_rounds}{Colors.ENDC}")
-
-        updates = []
-        for i in range(n_clients):
-            weights = np.random.randn(100) + i * 0.1
-            n_samples = 100 + i * 20
-            local_loss = 2.0 * np.exp(-0.3 * round_num) + np.random.rand() * 0.1
-
-            updates.append(
-                LocalModelUpdate(
-                    client_id=f"mobile_{i:03d}",
-                    weights=weights,
-                    n_samples=n_samples,
-                    local_loss=local_loss,
-                )
-            )
-
-            print(f"     📱 Client {i}: {n_samples} samples, loss={local_loss:.4f}")
-
-        print_status("  Running quantum-enhanced aggregation...", "quantum")
-
-        start_time = time.time()
-        global_state = await aggregator.aggregate(updates, use_quantum=True)
-        exec_time = (time.time() - start_time) * 1000
-
-        print_status(f"  Aggregation time: {exec_time:.2f}ms", "success")
-        print_status(
-            f"  Global weight norm: {global_state.aggregation_metrics.get('hybrid_norm', 0):.4f}",
-            "info",
-        )
-
-        if global_state.quantum_embedding is not None:
-            print_status(
-                f"  Quantum embedding computed: {len(global_state.quantum_embedding)} dims",
-                "quantum",
-            )
-
-    metrics = aggregator.get_aggregation_metrics()
-
-    print(f"\n{Colors.BOLD}{Colors.GREEN}  ════════════════════════════════════════{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.GREEN}  ✓ Federated Learning Complete!{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.GREEN}  ════════════════════════════════════════{Colors.ENDC}")
-
-    print_status(f"Total rounds: {metrics['total_rounds']}", "success")
-    print_status(f"VQC parameters: {metrics['vqc_params_count']}", "info")
-
-    return aggregator
+    return summary
 
 
 def demo_pqc_security():
@@ -352,9 +295,9 @@ def print_summary():
 │     - Richardson extrapolation                                      │
 │     - Error mitigation for NISQ devices                             │
 │                                                                      │
-│  ✅ Demo 4: Federated Learning + Quantum Aggregation                │
-│     - 5 simulated mobile clients                                    │
-│     - Hybrid classical-quantum aggregation                          │
+│  ✅ Demo 4: Federated learning                                      │
+│     - 5 simulated clients, non-IID breast_cancer split              │
+│     - FedAvg on logistic regression                                 │
 │                                                                      │
 │  ✅ Demo 5: Post-Quantum Cryptography                               │
 │     - X25519 + ML-KEM-768 key encapsulation                         │
@@ -371,14 +314,14 @@ def print_summary():
     print(summary)
 
 
-async def main():
+def main():
     print_banner()
 
     try:
         demo_quantum_circuits()
         demo_quantum_kernels()
         demo_error_mitigation()
-        await demo_quantum_aggregation()
+        demo_federated_learning()
         demo_pqc_security()
         print_summary()
 
@@ -393,5 +336,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    sys.exit(main())

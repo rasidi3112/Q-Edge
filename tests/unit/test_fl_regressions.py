@@ -1,122 +1,102 @@
 """Regression tests for FL findings F1-F5 and F8-F10 of the 99a5be6 audit."""
 
+import importlib.util
 import subprocess
 import sys
 
 import numpy as np
 import pytest
 
-AUDIT = pytest.mark.xfail(strict=True, reason="FL audit finding")
+from qedge.fl.compression import TopKCompressor
+from qedge.fl.strategies import SERVER_STRATEGIES, ServerStrategy, fedadam
+
+torch = pytest.importorskip("torch")
 
 
-def _aggregator(strategy="fedavg"):
-    from qedge.fl.aggregator import (
-        AggregationStrategy,
-        QuantumAggregatorConfig,
-        QuantumGlobalAggregator,
-    )
-
-    config = QuantumAggregatorConfig(
-        n_qubits=4,
-        vqc_layers=1,
-        use_error_mitigation=False,
-        aggregation_strategy=AggregationStrategy(strategy),
-    )
-    return QuantumGlobalAggregator(config, seed=0)
+def _w(*values):
+    return {"w": np.asarray(values, np.float32)}
 
 
-def _update(client_id, weights, n):
-    from qedge.fl.aggregator import LocalModelUpdate
-
-    return LocalModelUpdate(client_id, np.asarray(weights, np.float64), n_samples=n)
-
-
-@AUDIT
-@pytest.mark.asyncio
-async def test_identical_updates_aggregate_to_themselves():
-    w = np.linspace(-1.0, 1.0, 20)
-    state = await _aggregator().aggregate(
-        [_update("a", w, 1), _update("b", w, 2)], use_quantum=True
-    )
-
-    np.testing.assert_allclose(state.weights, w, atol=1e-9)
+def test_identical_updates_aggregate_to_themselves():
+    w = _w(*np.linspace(-1.0, 1.0, 20))
+    for name in SERVER_STRATEGIES:
+        result = ServerStrategy(name).step(w, [(w, 1), (w, 2)])
+        np.testing.assert_allclose(result["w"], w["w"], atol=1e-6)
 
 
-@AUDIT
 def test_aggregation_never_zeroes_weights():
-    expanded = _aggregator()._expand_weights(np.ones(8), (100,))
-
-    assert np.all(expanded != 0)
-
-
-@AUDIT
-@pytest.mark.asyncio
-async def test_aggregation_does_not_evaluate_quantum_kernels(monkeypatch):
-    aggregator = _aggregator()
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("aggregation evaluated a quantum kernel")
-
-    monkeypatch.setattr(aggregator.qka, "compute_kernel_matrix", forbidden)
-    w = np.ones(10)
-    await aggregator.aggregate([_update("a", w, 1), _update("b", w, 1)], use_quantum=True)
+    ones = _w(*np.ones(100))
+    for name in SERVER_STRATEGIES:
+        assert np.all(ServerStrategy(name).step(ones, [(ones, 1)])["w"] != 0)
 
 
-@AUDIT
-@pytest.mark.asyncio
-async def test_fedprox_is_a_client_side_proximal_term():
-    aggregator = _aggregator("fedprox")
-    await aggregator.aggregate([_update("a", np.zeros(4), 1)], use_quantum=False)
-    w = np.ones(4)
-    state = await aggregator.aggregate([_update("a", w, 1), _update("b", w, 1)], use_quantum=False)
+def test_aggregation_does_not_evaluate_quantum_kernels():
+    code = "import sys, qedge.fl.strategies, qedge.fl.simulation; print('pennylane' in sys.modules)"
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
 
-    np.testing.assert_allclose(state.weights, w)
+    assert result.stdout.strip() == "False"
 
 
-@AUDIT
-@pytest.mark.asyncio
-async def test_fedadam_keeps_optimizer_state_across_rounds():
-    aggregator = _aggregator("fedopt")
-    await aggregator.aggregate([_update("a", np.zeros(3), 1)], use_quantum=False)
-    first = (await aggregator.aggregate([_update("a", np.ones(3), 1)], use_quantum=False)).weights
-    target = first + 1.0
-    second = (await aggregator.aggregate([_update("a", target, 1)], use_quantum=False)).weights
+def test_fedprox_is_a_client_side_proximal_term():
+    from qedge.fl.models import build_model, get_weights
+    from qedge.fl.training import TrainConfig, local_train
 
-    # Adam's first moment accumulates, so the second step is larger than a stateless one.
-    assert np.all(second - first > 0.01 * (target - first) + 1e-12)
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(64, 5)).astype(np.float32)
+    y = (x[:, 0] > 0).astype(np.int64)
+    distances = {}
+    for mu in (0.0, 10.0):
+        model = build_model("logreg", 5, 2, seed=0)
+        start = get_weights(model)
+        local_train(model, x, y, TrainConfig(epochs=5, lr=0.1, mu=mu), seed=1)
+        end = get_weights(model)
+        distances[mu] = sum(float(np.sum((end[n] - start[n]) ** 2)) for n in start)
+
+    assert distances[10.0] < 0.5 * distances[0.0]
+    assert "fedprox" not in SERVER_STRATEGIES
 
 
-@AUDIT
+def test_fedadam_keeps_optimizer_state_across_rounds():
+    zero = _w(0.0, 0.0, 0.0)
+    first, state = fedadam(zero, [(_w(1.0, 1.0, 1.0), 1)], None, lr=0.1)
+    second, state = fedadam(first, [({"w": first["w"] + 1.0}, 1)], state, lr=0.1)
+
+    m1 = 0.1 * 1.0
+    v1 = 0.99 * 1e-6 + 0.01 * 1.0
+    np.testing.assert_allclose(first["w"], 0.1 * m1 / (np.sqrt(v1) + 1e-3), rtol=1e-5)
+    m2 = 0.9 * m1 + 0.1 * 1.0
+    v2 = 0.99 * v1 + 0.01 * 1.0
+    np.testing.assert_allclose(second["w"] - first["w"], 0.1 * m2 / (np.sqrt(v2) + 1e-3), rtol=1e-5)
+    assert np.all(second["w"] - first["w"] > first["w"])
+
+
 def test_quantum_parameters_are_not_trained_with_random_noise():
-    import importlib.util
-
     assert importlib.util.find_spec("qedge.fl.aggregator") is None
+    assert importlib.util.find_spec("qedge.fl.client") is None
 
 
-@AUDIT
 def test_compression_applies_to_update_deltas():
-    pytest.importorskip("torch")
-    from qedge.fl.client import MobileDeviceConfig, MobileFlowerClient
+    compressor = TopKCompressor(0.1)
+    delta = {"w": np.zeros(50, np.float32)}
+    weights = {"w": np.arange(50, dtype=np.float32)}
 
-    client = MobileFlowerClient(MobileDeviceConfig(compression_ratio=0.1))
-    weights = client.get_parameters()
+    sent, _ = compressor.compress(delta)
 
-    sent = client.compress_gradients(weights)
-
-    for original, transmitted in zip(weights, sent, strict=True):
-        np.testing.assert_allclose(transmitted, original)
+    np.testing.assert_array_equal(weights["w"] + sent["w"], weights["w"])
 
 
-@AUDIT
-def test_fl_modules_report_missing_torch_as_import_error():
-    code = "import sys; sys.modules['torch'] = None; import qedge.fl.client"
+@pytest.mark.parametrize("module", ["qedge.fl.models", "qedge.fl.training", "qedge.fl.simulation"])
+def test_fl_modules_report_missing_torch_as_import_error(module):
+    code = f"import sys; sys.modules['torch'] = None; import {module}"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
     assert "ImportError" in result.stderr and "q-edge[fl]" in result.stderr
 
 
-@AUDIT
 def test_simulation_learns_real_labels():
+    pytest.importorskip("sklearn")
     from qedge.fl.simulation import SimulationConfig, run_simulation
 
     config = SimulationConfig(dataset="breast_cancer", clients=5, rounds=8, alpha=0.5)

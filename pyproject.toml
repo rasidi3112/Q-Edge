@@ -56,8 +56,11 @@ server = [
 postgres = [
     "psycopg[binary]>=3.2",
 ]
+# scikit-learn provides the datasets, PyYAML writes run configs.
 fl = [
     "flwr>=1.32",
+    "pyyaml>=6",
+    "scikit-learn>=1.9",
     "torch>=2.14",
 ]
 pqc = [
@@ -78,6 +81,7 @@ dev = [
     "pytest-cov>=7",
     # Pinned to the version in .pre-commit-config.yaml so both format identically.
     "ruff==0.17.1",
+    "types-pyyaml>=6",
 ]
 
 [project.urls]
@@ -137,15 +141,15 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# No type information: celery, liboqs, PennyLane and scipy ship neither
-# stubs nor py.typed; torch and flwr (the `fl` extra) are not installed for type checks.
-module = ["celery.*", "flwr.*", "oqs.*", "pennylane.*", "scipy.*", "torch.*"]
+# No type information: celery, liboqs, PennyLane, scikit-learn and scipy
+# ship neither stubs nor py.typed.
+module = ["celery.*", "oqs.*", "pennylane.*", "scipy.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# qml.qnode and Celery's task decorator are untyped, and the Flower client
-# subclasses torch.nn.Module, flwr's NumPyClient and celery.Task, which are Any here.
-module = ["qedge.quantum.*", "qedge.server.worker", "qedge.fl.client"]
+# qml.qnode and Celery's task decorator are untyped, and the worker
+# subclasses celery.Task, which is Any here.
+module = ["qedge.quantum.*", "qedge.server.worker"]
 disallow_untyped_decorators = false
 disallow_subclassing_any = false
 
