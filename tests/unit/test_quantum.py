@@ -161,6 +161,7 @@ class TestQuantumKernelAlignment:
         # Same matrices should have alignment 1
         assert np.isclose(alignment, 1.0, atol=1e-6)
 
+    @pytest.mark.slow
     def test_kernel_alignment_optimization(self):
         config = QKAConfig(
             n_qubits=4,
