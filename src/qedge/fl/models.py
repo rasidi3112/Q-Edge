@@ -18,24 +18,40 @@ try:
 except ImportError as exc:  # pragma: no cover - exercised in a subprocess test
     raise ImportError("PyTorch is required for qedge.fl.models; install q-edge[fl]") from exc
 
-MODELS = ("logreg", "mlp")
+MODELS = ("logreg", "mlp", "classical-head", "hybrid-vqc")
+HEAD_MODELS = ("classical-head", "hybrid-vqc")
 
 
 def build_model(
-    name: str, n_features: int, n_classes: int, *, seed: int, hidden: int = 16
+    name: str, n_features: int, n_classes: int, *, seed: int, **options: Any
 ) -> nn.Module:
     """Build a classifier that outputs logits of shape ``(batch, n_classes)``.
 
     Args:
-        name: ``"logreg"`` (one linear layer) or ``"mlp"`` (one hidden ReLU layer).
+        name: ``"logreg"`` (one linear layer), ``"mlp"`` (one hidden ReLU
+            layer), ``"hybrid-vqc"`` or ``"classical-head"``
+            (`qedge.quantum.models`; these import PennyLane).
         n_features: Input width.
         n_classes: Number of classes.
         seed: Seed for weight initialization.
-        hidden: Hidden width of the MLP.
+        **options: ``hidden`` for the MLP; `qedge.quantum.models.head_config`
+            options for the head models.
 
     Raises:
-        ValueError: If ``name`` is not one of `MODELS`.
+        ValueError: If ``name`` is not one of `MODELS` or an option does not apply.
     """
+    if name in HEAD_MODELS:
+        from qedge.quantum.models import build_head_model, head_config
+
+        try:
+            config = head_config(**options)
+        except TypeError as exc:
+            raise ValueError(f"Invalid options for {name}: {exc}") from exc
+        return build_head_model(name, n_features, n_classes, config, seed=seed)
+    allowed = {"hidden"} if name == "mlp" else set()
+    if set(options) - allowed:
+        raise ValueError(f"Options {sorted(set(options) - allowed)} do not apply to {name!r}")
+    hidden = int(options.get("hidden", 16))
     generator_state = torch.random.get_rng_state()
     torch.manual_seed(seed)
     try:

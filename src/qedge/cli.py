@@ -28,7 +28,10 @@ from qedge.crypto.sign import SIGNATURE_ALGORITHMS
 from qedge.protocol import SCOPES
 
 FL_DATASETS = ("breast_cancer", "digits")
-FL_MODELS = ("logreg", "mlp")
+FL_MODELS = ("logreg", "mlp", "classical-head", "hybrid-vqc")
+HEAD_MODELS = ("classical-head", "hybrid-vqc")
+ANSATZE = ("strongly_entangling", "hardware_efficient")
+ZNE_METHODS = ("richardson", "poly", "exponential")
 FL_STRATEGIES = ("fedavg", "fedprox", "fedadam", "fedyogi")
 
 
@@ -87,7 +90,36 @@ def _parser() -> argparse.ArgumentParser:
     sim.add_argument("--dp-clip", type=float, help="L2 clip for update deltas")
     sim.add_argument("--dp-noise", type=float, default=0.0, help="Gaussian noise multiplier")
     sim.add_argument("--out", type=Path, default=Path("results/runs"), help="parent directory")
+    head = sim.add_argument_group("hybrid-vqc and classical-head options")
+    head.add_argument("--qubits", type=int, dest="n_qubits")
+    head.add_argument("--layers", type=int, dest="n_layers")
+    head.add_argument("--ansatz", choices=ANSATZE)
+    head.add_argument("--reupload", action="store_true", default=None, help="data re-uploading")
+    head.add_argument("--noise", type=float, help="gate error probability (default.mixed)")
+    head.add_argument("--noise-channel", choices=("depolarizing", "amplitude_damping"))
+    head.add_argument("--readout", type=float, help="readout bit-flip probability")
+    head.add_argument("--shots", type=int, help="finite shots (parameter-shift gradients)")
+    head.add_argument("--zne", choices=ZNE_METHODS, help="zero-noise extrapolation")
+    head.add_argument("--zne-scales", type=float, nargs="+", help="odd integers, e.g. 1 3 5")
+    head.add_argument("--zne-order", type=int, help="order for --zne poly")
+    head.add_argument("--encoder-hidden", type=int)
     return parser
+
+
+HEAD_OPTIONS = (
+    "n_qubits",
+    "n_layers",
+    "ansatz",
+    "reupload",
+    "noise",
+    "noise_channel",
+    "readout",
+    "shots",
+    "zne",
+    "zne_scales",
+    "zne_order",
+    "encoder_hidden",
+)
 
 
 def _describe(keys: ServerKeys, directory: Path) -> str:
@@ -169,6 +201,10 @@ def _clients(args: argparse.Namespace) -> int:
 def _simulate(args: argparse.Namespace) -> int:
     from qedge.fl.simulation import SimulationConfig, run_simulation
 
+    options = {k: getattr(args, k) for k in HEAD_OPTIONS if getattr(args, k) is not None}
+    if options and args.model not in HEAD_MODELS:
+        print(f"error: {sorted(options)} only apply to {HEAD_MODELS}", file=sys.stderr)
+        return 1
     try:
         config = SimulationConfig(
             dataset=args.dataset,
@@ -186,6 +222,7 @@ def _simulate(args: argparse.Namespace) -> int:
             compression=args.compression,
             dp_clip=args.dp_clip,
             dp_noise=args.dp_noise,
+            model_options=options,
         )
         summary = run_simulation(config, args.out)
     except (ValueError, OSError) as exc:
@@ -194,6 +231,7 @@ def _simulate(args: argparse.Namespace) -> int:
     rows = [
         ("run directory", summary["run_dir"]),
         ("parameters", summary["parameters"]),
+        *([("head params", summary["model"]["head_parameters"])] if summary["model"] else []),
         ("final accuracy", f"{summary['final_accuracy']:.4f}"),
         ("best accuracy", f"{summary['best_accuracy']:.4f}"),
         ("bytes up", summary["bytes_up"]),

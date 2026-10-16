@@ -171,6 +171,7 @@ def run_simulation(
         record = {
             "config": dataclasses.asdict(config),
             "parameters": count_parameters(model),
+            "model": model.describe() if hasattr(model, "describe") else None,
             "partition": partition,
             "test_samples": len(data.y_test),
             "environment": environment(),
@@ -230,6 +231,7 @@ def run_simulation(
         "bytes_up": total_up,
         "bytes_down": total_down,
         "parameters": count_parameters(model),
+        "model": model.describe() if hasattr(model, "describe") else None,
         "seconds": time.perf_counter() - started,
         "run_dir": None if run_dir is None else str(run_dir),
         "history": history,
