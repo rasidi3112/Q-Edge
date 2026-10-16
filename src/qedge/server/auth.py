@@ -1,12 +1,16 @@
-"""Access tokens and a request middleware.
+"""Client enrollment, challenge-response login and access tokens.
 
-`PQCAuthMiddleware` does not verify signatures. Post-quantum primitives live in
-`qedge.crypto`.
+An admin enrolls each client id with its ML-DSA public key (``qedge clients
+add`` or ``POST /admin/clients``). To log in, a client asks for a 32-byte
+nonce, signs ``label || nonce || client_id || server_id`` and exchanges the
+signature for a short-lived token. Nonces live 60 s and can be used once. See
+docs/decisions/0007-admin-enrollment.md.
 """
 
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 import uuid
 from collections.abc import Callable
@@ -14,11 +18,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import jwt
-from fastapi import Request, status
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
-from starlette.types import ASGIApp
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
+
+from qedge.crypto.sign import Signer
+from qedge.crypto.transport import MAX_CLIENT_ID_BYTES
+from qedge.server.db import Challenge, Client
 
 if TYPE_CHECKING:
     from qedge.server.settings import Settings
@@ -26,6 +31,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SCOPES = ("client", "admin")
+NONCE_BYTES = 32
+CHALLENGE_TTL_SECONDS = 60
+_CHALLENGE_LABEL = b"qedge/auth/v1"
 
 
 class TokenError(Exception):
@@ -130,65 +138,110 @@ class TokenIssuer:
         )
 
 
-class PQCAuthMiddleware(BaseHTTPMiddleware):
-    """Checks ``X-PQC-Timestamp`` and adds ``X-PQC-*`` headers to every response.
+class ClientConflictError(Exception):
+    """A client id is already enrolled with a different key or scope."""
 
-    It does not verify signatures and does not reject requests that lack the
-    headers, so ``X-PQC-Protected: true`` carries no meaning.
+
+class AuthenticationFailed(Exception):
+    """Login failed; ``reason`` is a short label for metrics, never shown to clients.
+
+    Args:
+        reason: One of ``unknown_client``, ``unknown_nonce``, ``expired_nonce``
+            or ``bad_signature``.
     """
 
-    def __init__(self, app: ASGIApp, excluded_paths: list[str] | None = None) -> None:
-        super().__init__(app)
-        self.excluded_paths = excluded_paths or [
-            "/",
-            "/health",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-            "/auth/register",
-        ]
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """Reject requests whose ``X-PQC-Timestamp`` is more than 300 s off; pass all others."""
-        # Skip excluded paths
-        if request.url.path in self.excluded_paths:
-            return await call_next(request)
 
-        # Check for PQC headers
-        pqc_signature = request.headers.get("X-PQC-Signature")
-        pqc_timestamp = request.headers.get("X-PQC-Timestamp")
-        pqc_client_id = request.headers.get("X-PQC-Client-ID")
+def enroll_client(
+    session: Session, client_id: str, public_key: bytes, scope: str, *, signer: Signer
+) -> bool:
+    """Enroll ``client_id`` with its ML-DSA public key; idempotent for the same key.
 
-        # For signed requests, verify signature
-        if pqc_signature and pqc_timestamp and pqc_client_id:
-            try:
-                # Anti-replay check
-                timestamp = int(pqc_timestamp)
-                current_time = int(time.time())
+    Returns:
+        True if a new client was created, False if the identical enrollment
+        already existed.
 
-                if abs(current_time - timestamp) > 300:  # 5 minute window
-                    return JSONResponse(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        content={"detail": "Request timestamp expired"},
-                    )
+    Raises:
+        ValueError: If the id is empty or too long, the scope is unknown, or the
+            key length does not match ``signer``.
+        ClientConflictError: If the id exists with another key or scope.
+    """
+    if not 0 < len(client_id.encode()) <= MAX_CLIENT_ID_BYTES:
+        raise ValueError(f"Client id must be 1 to {MAX_CLIENT_ID_BYTES} UTF-8 bytes")
+    if scope not in SCOPES:
+        raise ValueError(f"Unknown scope {scope!r}; expected {SCOPES}")
+    if len(public_key) != signer.public_key_size:
+        raise ValueError(f"{signer.name} public keys are {signer.public_key_size} bytes")
+    existing = session.get(Client, client_id)
+    if existing is not None:
+        if existing.public_key == public_key and existing.scope == scope:
+            return False
+        raise ClientConflictError(f"{client_id!r} is already enrolled with another key or scope")
+    session.add(Client(id=client_id, public_key=public_key, scope=scope, created_at=time.time()))
+    session.commit()
+    return True
 
-                # The signature is not verified; only its length is logged.
-                logger.debug(
-                    f"PQC request from {pqc_client_id}, signature length: {len(pqc_signature)}"
-                )
 
-            except Exception as e:
-                logger.warning(f"PQC verification failed: {e}")
-                return JSONResponse(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": f"PQC verification failed: {e!s}"},
-                )
+def challenge_message(nonce: bytes, client_id: str, server_id: str) -> bytes:
+    """Bytes a client signs to answer a login challenge."""
+    parts = [nonce, client_id.encode(), server_id.encode()]
+    return _CHALLENGE_LABEL + b"".join(len(part).to_bytes(2, "big") + part for part in parts)
 
-        # Continue with request
-        response = await call_next(request)
 
-        # Add PQC headers to response
-        response.headers["X-PQC-Protected"] = "true"
-        response.headers["X-PQC-Algorithm"] = "kyber1024+dilithium5"
+def issue_challenge(session: Session, client_id: str, *, now: float) -> bytes:
+    """Return a fresh 32-byte nonce valid for `CHALLENGE_TTL_SECONDS`.
 
-        return response
+    Unknown client ids also get a nonce, which is never stored, so the
+    response does not reveal who is enrolled.
+    """
+    session.execute(delete(Challenge).where(Challenge.expires_at <= now))
+    nonce = secrets.token_bytes(NONCE_BYTES)
+    if session.get(Client, client_id) is not None:
+        session.add(
+            Challenge(nonce=nonce, client_id=client_id, expires_at=now + CHALLENGE_TTL_SECONDS)
+        )
+    session.commit()
+    return nonce
+
+
+def redeem_challenge(
+    session: Session,
+    client_id: str,
+    nonce: bytes,
+    signature: bytes,
+    *,
+    server_id: str,
+    signer: Signer,
+    now: float,
+) -> Client:
+    """Consume ``nonce`` and verify the client's signature over it.
+
+    The nonce is deleted before the signature is checked, so each nonce can be
+    tried once.
+
+    Returns:
+        The enrolled client.
+
+    Raises:
+        AuthenticationFailed: If the nonce is unknown, expired, or belongs to
+            another client, or the signature does not verify.
+    """
+    challenge = session.get(Challenge, nonce)
+    if challenge is None or challenge.client_id != client_id:
+        raise AuthenticationFailed("unknown_nonce")
+    deleted = session.execute(delete(Challenge).where(Challenge.nonce == nonce))
+    session.commit()
+    if getattr(deleted, "rowcount", 0) != 1:
+        raise AuthenticationFailed("unknown_nonce")  # redeemed concurrently
+    if challenge.expires_at <= now:
+        raise AuthenticationFailed("expired_nonce")
+    client = session.get(Client, client_id)
+    if client is None:
+        raise AuthenticationFailed("unknown_client")
+    message = challenge_message(nonce, client_id, server_id)
+    if not signer.verify(client.public_key, message, signature):
+        raise AuthenticationFailed("bad_signature")
+    return client

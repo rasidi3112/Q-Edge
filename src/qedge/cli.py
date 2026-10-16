@@ -1,4 +1,4 @@
-"""Command-line entry point: ``qedge keys init`` and ``qedge keys show``."""
+"""Command-line entry point: ``qedge keys`` and ``qedge clients``."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from qedge.crypto.backends import BACKENDS, get_kem, get_signer
-from qedge.crypto.errors import CryptoError
+from qedge.crypto.errors import CryptoError, KeyStoreError
 from qedge.crypto.keys import (
     DEFAULT_KEM,
     DEFAULT_SIGNATURE,
@@ -21,6 +21,8 @@ from qedge.crypto.keys import (
     load_server_keys,
 )
 from qedge.crypto.sign import SIGNATURE_ALGORITHMS
+from qedge.server.auth import SCOPES, ClientConflictError, enroll_client
+from qedge.server.db import Database, default_database_url
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -40,6 +42,26 @@ def _parser() -> argparse.ArgumentParser:
     show = actions.add_parser("show", help="check keys and print fingerprints")
     show.add_argument("--dir", type=Path, required=True, help="key directory")
     show.add_argument("--backend", choices=BACKENDS, default=backend_default)
+
+    clients = commands.add_parser("clients", help="manage client identities")
+    client_actions = clients.add_subparsers(dest="action", required=True)
+    keygen = client_actions.add_parser("keygen", help="create a client ML-DSA key pair")
+    keygen.add_argument("--out", type=Path, required=True, help="directory for client.pub/.key")
+    keygen.add_argument("--backend", choices=BACKENDS, default=backend_default)
+    keygen.add_argument("--signature", choices=SIGNATURE_ALGORITHMS, default=DEFAULT_SIGNATURE)
+    keygen.add_argument("--force", action="store_true", help="replace existing key files")
+
+    add = client_actions.add_parser("add", help="enroll a client id with its public key")
+    add.add_argument("--id", required=True, dest="client_id")
+    add.add_argument("--public-key", type=Path, required=True, help="raw ML-DSA public key file")
+    add.add_argument("--scope", choices=SCOPES, default="client")
+    add.add_argument("--backend", choices=BACKENDS, default=backend_default)
+    add.add_argument("--signature", choices=SIGNATURE_ALGORITHMS, default=DEFAULT_SIGNATURE)
+    add.add_argument(
+        "--database-url",
+        default=os.environ.get("QEDGE_DATABASE_URL")
+        or default_database_url(Path(os.environ.get("QEDGE_DATA_DIR", "qedge-data"))),
+    )
     return parser
 
 
@@ -58,6 +80,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return the process exit code (0 on success, 1 on error)."""
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     args = _parser().parse_args(argv)
+    if args.command == "clients":
+        return _clients(args)
     try:
         if args.action == "init":
             keys = generate_server_keys(
@@ -72,6 +96,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(_describe(keys, args.dir))
+    return 0
+
+
+def _clients(args: argparse.Namespace) -> int:
+    try:
+        signer = get_signer(args.signature, args.backend)
+        if args.action == "keygen":
+            args.out.mkdir(parents=True, exist_ok=True, mode=0o700)
+            public_path, secret_path = args.out / "client.pub", args.out / "client.key"
+            if not args.force and (public_path.exists() or secret_path.exists()):
+                raise KeyStoreError(f"{args.out} already holds client keys; pass --force")
+            public_key, secret_key = signer.generate_keypair()
+            secret_path.unlink(missing_ok=True)
+            fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(secret_key)
+            public_path.write_bytes(public_key)
+            print(f"{'public key:':16}{public_path}\n{'fingerprint:':16}{fingerprint(public_key)}")
+            return 0
+        public_key = args.public_key.read_bytes()
+        if args.database_url.startswith("sqlite:///"):
+            Path(args.database_url.removeprefix("sqlite:///")).parent.mkdir(
+                parents=True, exist_ok=True
+            )
+        database = Database(args.database_url)
+        database.upgrade()
+        with database.session() as session:
+            created = enroll_client(session, args.client_id, public_key, args.scope, signer=signer)
+        database.dispose()
+    except (CryptoError, ClientConflictError, ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    verb = "enrolled" if created else "already enrolled"
+    print(f"{verb} {args.client_id} ({args.scope}), key {fingerprint(public_key)}")
     return 0
 
 

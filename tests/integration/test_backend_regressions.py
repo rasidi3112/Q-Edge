@@ -1,5 +1,7 @@
 """Regression tests for backend findings S3, S7-S10, F6 and F7 of the 99a5be6 audit."""
 
+import base64
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -8,46 +10,37 @@ from qedge.server.app import create_app
 AUDIT = pytest.mark.xfail(strict=True, reason="backend audit finding")
 
 
-def _register(client, client_id="hospital_A", public_key="KEY_A", signature="x"):
-    body = {
-        "client_id": client_id,
-        "device_info": {},
-        "public_key": public_key,
-        "signature": signature,
-    }
-    return client.post("/auth/register", json=body)
-
-
-def _auth(response):
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
-
 @pytest.fixture
 def client(settings):
     with TestClient(create_app(settings), raise_server_exceptions=False) as test_client:
         yield test_client
 
 
-@AUDIT
-def test_register_rejects_existing_client_id_with_new_key(client):
-    assert _register(client, public_key="KEY_A").status_code == 200
-
-    assert _register(client, public_key="ATTACKER_KEY").status_code == 409
+@pytest.fixture
+def headers(client, enroll, login):
+    return login(client, "hospital_A", enroll("hospital_A"))
 
 
-@AUDIT
-def test_responses_carry_no_fake_security_headers(client):
-    response = client.get("/")
+def test_register_rejects_existing_client_id_with_new_key(client, enroll, login, signer):
+    admin = login(client, "admin", enroll("admin", scope="admin"))
+    enroll("hospital_A")
+    attacker_key, _ = signer.generate_keypair()
+    body = {"client_id": "hospital_A", "public_key": base64.b64encode(attacker_key).decode()}
 
-    assert "X-PQC-Protected" not in response.headers
-    assert "X-RateLimit-Remaining" not in response.headers
+    assert client.post("/admin/clients", json=body, headers=admin).status_code == 409
+    assert client.post("/auth/register", json=body).status_code == 404
 
 
-@AUDIT
-def test_client_tokens_cannot_use_admin_endpoints(client):
-    headers = _auth(_register(client))
+def test_responses_carry_no_fake_security_headers(client, headers):
+    for response in (client.get("/"), client.get("/fl/global-model", headers=headers)):
+        assert not any(
+            name.lower().startswith(("x-pqc", "x-ratelimit")) for name in response.headers
+        )
 
+
+def test_client_tokens_cannot_use_admin_endpoints(client, headers):
     assert client.get("/admin/clients", headers=headers).status_code == 403
+    assert client.post("/admin/clients", json={}, headers=headers).status_code == 403
 
 
 @AUDIT
@@ -56,8 +49,7 @@ def test_unauthenticated_requests_cannot_run_circuits(client):
 
 
 @AUDIT
-def test_quantum_jobs_bound_the_number_of_qubits(client):
-    headers = _auth(_register(client))
+def test_quantum_jobs_bound_the_number_of_qubits(client, headers):
     job = {"circuit_type": "vqc", "parameters": {"n_qubits": 30}, "shots": 100}
 
     assert client.post("/quantum/submit-job", json=job, headers=headers).status_code == 422
@@ -75,25 +67,24 @@ def _submit(client, headers, weights, n_samples=10, round_number=1):
 
 
 @AUDIT
-def test_second_submission_from_the_same_client_is_rejected(client):
-    headers = _auth(_register(client))
+def test_second_submission_from_the_same_client_is_rejected(client, headers):
     assert _submit(client, headers, [1.0, 1.0]).status_code == 200
 
     assert _submit(client, headers, [-35.0, -35.0]).status_code == 409
 
 
 @AUDIT
-def test_inflated_sample_counts_are_rejected(client):
-    headers = _auth(_register(client))
+def test_inflated_sample_counts_are_rejected(client, headers):
 
     assert _submit(client, headers, [1.0, 1.0], n_samples=10**9).status_code in (400, 422)
 
 
 @AUDIT
-def test_mismatched_weight_shapes_are_rejected_without_a_server_error(client):
-    headers = _auth(_register(client))
+def test_mismatched_weight_shapes_are_rejected_without_a_server_error(
+    client, headers, enroll, login
+):
     _submit(client, headers, [1.0, 1.0])
-    headers_b = _auth(_register(client, client_id="hospital_B", public_key="KEY_B"))
+    headers_b = login(client, "hospital_B", enroll("hospital_B"))
     body = {"client_id": "hospital_B", "round_number": 1, "weights": [1.0, 2.0, 3.0]}
     client.post(
         "/fl/submit-weights", json={**body, "n_samples": 10, "local_loss": 0.1}, headers=headers_b
@@ -105,8 +96,7 @@ def test_mismatched_weight_shapes_are_rejected_without_a_server_error(client):
 
 
 @AUDIT
-def test_clients_cannot_trigger_aggregation(client):
-    headers = _auth(_register(client))
+def test_clients_cannot_trigger_aggregation(client, headers):
     _submit(client, headers, [1.0, 1.0])
 
     assert client.post("/fl/trigger-aggregation", headers=headers).status_code in (403, 404, 405)

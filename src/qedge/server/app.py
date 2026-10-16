@@ -1,20 +1,20 @@
 """FastAPI coordination server.
 
-Registration accepts any non-empty signature and overwrites existing clients,
-weight submissions are not validated, and any registered client can call the
-admin endpoints.
+Clients are enrolled by an admin and log in with an ML-DSA challenge-response
+(see `qedge.server.auth`). Weight submissions are not validated yet.
 """
 
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from fastapi import (
@@ -29,16 +29,29 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from qedge import __version__
+from qedge.crypto.backends import get_signer
 from qedge.crypto.errors import KeyStoreError
 from qedge.crypto.keys import ServerKeys, fingerprint, load_server_keys
+from qedge.crypto.sign import Signer
 from qedge.fl.aggregator import (
     LocalModelUpdate,
     QuantumAggregatorConfig,
     QuantumGlobalAggregator,
 )
-from qedge.server.auth import PQCAuthMiddleware, TokenError, TokenIssuer
+from qedge.server.auth import (
+    CHALLENGE_TTL_SECONDS,
+    AuthenticationFailed,
+    ClientConflictError,
+    TokenError,
+    TokenIssuer,
+    enroll_client,
+    issue_challenge,
+    redeem_challenge,
+)
+from qedge.server.db import Client, Database
 from qedge.server.settings import Settings
 from qedge.server.worker import (
     get_task_status,
@@ -48,28 +61,51 @@ from qedge.server.worker import (
 logger = logging.getLogger(__name__)
 
 
-# Pydantic models for API
-class ClientRegistration(BaseModel):
-    """Registration request; the signature is only checked for being non-empty."""
+class ChallengeRequest(BaseModel):
+    """Ask for a login nonce."""
 
-    client_id: str = Field(..., description="Unique client identifier")
-    device_info: dict[str, Any] = Field(default_factory=dict)
-    public_key: str = Field(..., description="PQC public key (Kyber)")
-    signature: str = Field(..., description="Registration signature (Dilithium)")
+    client_id: str = Field(min_length=1, max_length=256)
 
 
-class ClientAuthResponse(BaseModel):
-    """Access token and session id.
+class ChallengeResponse(BaseModel):
+    """A single-use nonce; sign `challenge_message` over it within ``expires_in`` s."""
 
-    ``server_public_key`` is the server's KEM public key in base64 (see
-    ``GET /crypto/keys``). ``expires_in`` is the token lifetime in seconds.
-    """
+    nonce: str
+    server_id: str
+    expires_in: int
+
+
+class TokenRequest(BaseModel):
+    """Answer to a challenge: base64 nonce and base64 ML-DSA signature."""
+
+    client_id: str = Field(min_length=1, max_length=256)
+    nonce: str
+    signature: str
+
+
+class TokenResponse(BaseModel):
+    """Bearer token; ``expires_in`` equals ``exp - iat`` of the token."""
 
     access_token: str
     token_type: str = "bearer"
     expires_in: int
-    server_public_key: str
-    session_id: str
+    scope: str
+
+
+class EnrollmentRequest(BaseModel):
+    """Enroll a client id with a base64 ML-DSA public key."""
+
+    client_id: str = Field(min_length=1, max_length=256)
+    public_key: str
+    scope: Literal["client", "admin"] = "client"
+
+
+class ClientInfo(BaseModel):
+    """An enrolled identity with its key fingerprint."""
+
+    client_id: str
+    scope: str
+    fingerprint: str
 
 
 class ModelWeightsSubmission(BaseModel):
@@ -138,9 +174,18 @@ class ServerState:
     settings: Settings
     aggregator: QuantumGlobalAggregator
     keys: ServerKeys
+    signer: Signer
     tokens: TokenIssuer
-    registered_clients: dict[str, dict[str, Any]] = field(default_factory=dict)
+    db: Database
     current_round_updates: list[LocalModelUpdate] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Principal:
+    """The authenticated caller of a request."""
+
+    client_id: str
+    scope: str
 
 
 def get_state(request: Request) -> ServerState:
@@ -159,7 +204,7 @@ def get_state(request: Request) -> ServerState:
 router = APIRouter()
 
 # Security
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 # Health endpoints
@@ -207,77 +252,88 @@ async def root() -> dict[str, str]:
     }
 
 
-# Authentication endpoints
-@router.post(
-    "/auth/register",
-    response_model=ClientAuthResponse,
-    tags=["Authentication"],
-)
-async def register_client(
-    registration: ClientRegistration,
-    state: ServerState = Depends(get_state),
-) -> ClientAuthResponse:
-    """Register a client and issue a JWT.
+def _b64decode(value: str, what: str) -> bytes:
+    try:
+        return base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{what} is not base64") from exc
 
-    The signature is not verified and an existing ``client_id`` is overwritten.
-    """
-    logger.info(f"Registering client: {registration.client_id}")
 
-    # Simulated check: any non-empty signature is accepted.
-    signature_valid = len(registration.signature) > 0
-
-    if not signature_valid:
+def _authenticate(
+    credentials: HTTPAuthorizationCredentials | None, state: ServerState, *scopes: str
+) -> Principal:
+    if credentials is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid PQC signature",
+            status.HTTP_401_UNAUTHORIZED, "Missing bearer token", {"WWW-Authenticate": "Bearer"}
         )
-
-    # Generate session and encapsulated key
-    session_id = f"session_{registration.client_id}_{int(time.time())}"
-
-    # Store registered client
-    state.registered_clients[registration.client_id] = {
-        "public_key": registration.public_key,
-        "device_info": registration.device_info,
-        "registered_at": datetime.utcnow().isoformat(),
-        "session_id": session_id,
-    }
-
-    access_token, expires_in = state.tokens.issue(registration.client_id, "client")
-
-    server_public_key = base64.b64encode(state.keys.kem_public_key).decode("ascii")
-
-    return ClientAuthResponse(
-        access_token=access_token,
-        token_type="bearer",
-        expires_in=expires_in,
-        server_public_key=server_public_key,
-        session_id=session_id,
-    )
-
-
-async def get_current_client(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    state: ServerState = Depends(get_state),
-) -> dict[str, Any]:
-    """FastAPI dependency resolving the bearer token to a registered client.
-
-    Raises:
-        HTTPException: 401 if the token is invalid or the client is unknown.
-    """
     try:
         claims = state.tokens.verify(credentials.credentials)
     except TokenError as exc:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {exc}",
-            headers={"WWW-Authenticate": "Bearer"},
+            status.HTTP_401_UNAUTHORIZED, "Invalid token", {"WWW-Authenticate": "Bearer"}
         ) from exc
-    if claims.subject not in state.registered_clients:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Client not registered"
-        )
-    return {"client_id": claims.subject, **state.registered_clients[claims.subject]}
+    with state.db.session() as session:
+        client = session.get(Client, claims.subject)
+    if client is None or client.scope != claims.scope:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Client is no longer enrolled")
+    if claims.scope not in scopes:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requires scope {' or '.join(scopes)}")
+    return Principal(claims.subject, claims.scope)
+
+
+async def require_client(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    state: ServerState = Depends(get_state),
+) -> Principal:
+    """FastAPI dependency: any enrolled identity (client or admin scope)."""
+    return _authenticate(credentials, state, "client", "admin")
+
+
+async def require_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    state: ServerState = Depends(get_state),
+) -> Principal:
+    """FastAPI dependency: admin scope only; client tokens get 403."""
+    return _authenticate(credentials, state, "admin")
+
+
+@router.post("/auth/challenge", response_model=ChallengeResponse, tags=["Authentication"])
+async def create_challenge(
+    request: ChallengeRequest, state: ServerState = Depends(get_state)
+) -> ChallengeResponse:
+    """Return a single-use nonce for ``client_id``."""
+    with state.db.session() as session:
+        nonce = issue_challenge(session, request.client_id, now=time.time())
+    return ChallengeResponse(
+        nonce=base64.b64encode(nonce).decode("ascii"),
+        server_id=state.settings.server_id,
+        expires_in=CHALLENGE_TTL_SECONDS,
+    )
+
+
+@router.post("/auth/token", response_model=TokenResponse, tags=["Authentication"])
+async def create_token(
+    request: TokenRequest, state: ServerState = Depends(get_state)
+) -> TokenResponse:
+    """Exchange a signed challenge for an access token; 401 on any failure."""
+    nonce = _b64decode(request.nonce, "nonce")
+    signature = _b64decode(request.signature, "signature")
+    try:
+        with state.db.session() as session:
+            client = redeem_challenge(
+                session,
+                request.client_id,
+                nonce,
+                signature,
+                server_id=state.settings.server_id,
+                signer=state.signer,
+                now=time.time(),
+            )
+    except AuthenticationFailed as exc:
+        logger.info("Login failed for %r: %s", request.client_id, exc.reason)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login failed") from exc
+    token, expires_in = state.tokens.issue(client.id, client.scope)
+    return TokenResponse(access_token=token, expires_in=expires_in, scope=client.scope)
 
 
 # Federated Learning endpoints
@@ -288,11 +344,11 @@ async def get_current_client(
 )
 async def submit_weights(
     submission: ModelWeightsSubmission,
-    client: dict[str, Any] = Depends(get_current_client),
+    principal: Principal = Depends(require_client),
     state: ServerState = Depends(get_state),
 ) -> dict[str, Any]:
     """Queue a client's weights; shape, round and sample count are not validated."""
-    if submission.client_id != client["client_id"]:
+    if submission.client_id != principal.client_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Client ID mismatch",
@@ -324,7 +380,7 @@ async def submit_weights(
     tags=["Federated Learning"],
 )
 async def trigger_aggregation(
-    client: dict[str, Any] = Depends(get_current_client),
+    principal: Principal = Depends(require_client),
     state: ServerState = Depends(get_state),
 ) -> AggregationResult:
     """Aggregate all queued updates on the event loop; any registered client may call this."""
@@ -370,7 +426,7 @@ async def trigger_aggregation(
     tags=["Federated Learning"],
 )
 async def get_global_model(
-    client: dict[str, Any] = Depends(get_current_client),
+    principal: Principal = Depends(require_client),
     state: ServerState = Depends(get_state),
 ) -> dict[str, Any]:
     """Return the latest global weights, or 404 before the first round."""
@@ -411,7 +467,7 @@ async def get_fl_metrics(state: ServerState = Depends(get_state)) -> dict[str, A
 )
 async def submit_quantum_job(
     job: QuantumJobSubmission,
-    client: dict[str, Any] = Depends(get_current_client),
+    principal: Principal = Depends(require_client),
 ) -> QuantumJobStatus:
     """Queue a background aggregation job on Celery."""
     logger.info(f"Submitting quantum job: {job.circuit_type}")
@@ -437,7 +493,7 @@ async def submit_quantum_job(
 )
 async def get_quantum_job_status(
     job_id: str,
-    client: dict[str, Any] = Depends(get_current_client),
+    principal: Principal = Depends(require_client),
 ) -> QuantumJobStatus:
     """Return the Celery state of a job."""
     status_info = get_task_status(job_id)
@@ -451,32 +507,42 @@ async def get_quantum_job_status(
     )
 
 
-# Admin endpoints (protected)
-@router.get("/admin/clients", tags=["Admin"])
+@router.post("/admin/clients", response_model=ClientInfo, tags=["Admin"])
+async def add_client(
+    request: EnrollmentRequest,
+    response: Response,
+    principal: Principal = Depends(require_admin),
+    state: ServerState = Depends(get_state),
+) -> ClientInfo:
+    """Enroll a client: 201 when new, 200 when identical, 409 for another key."""
+    public_key = _b64decode(request.public_key, "public_key")
+    try:
+        with state.db.session() as session:
+            created = enroll_client(
+                session, request.client_id, public_key, request.scope, signer=state.signer
+            )
+    except ClientConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    logger.info("%s enrolled %r (%s)", principal.client_id, request.client_id, request.scope)
+    return ClientInfo(
+        client_id=request.client_id, scope=request.scope, fingerprint=fingerprint(public_key)
+    )
+
+
+@router.get("/admin/clients", response_model=list[ClientInfo], tags=["Admin"])
 async def list_clients(
-    client: dict[str, Any] = Depends(get_current_client),
-    state: ServerState = Depends(get_state),
-) -> dict[str, Any]:
-    """List registered client ids; any client token is accepted."""
-    return {
-        "total_clients": len(state.registered_clients),
-        "clients": list(state.registered_clients.keys()),
-    }
-
-
-@router.get("/admin/aggregator-state", tags=["Admin"])
-async def get_aggregator_state(
-    client: dict[str, Any] = Depends(get_current_client),
-    state: ServerState = Depends(get_state),
-) -> dict[str, Any]:
-    """Return aggregator round counters; any client token is accepted."""
-    aggregator = state.aggregator
-    return {
-        "current_round": aggregator._current_round,
-        "vqc_params_count": aggregator.vqc.num_params,
-        "has_global_state": aggregator.global_state is not None,
-        "history_length": len(aggregator.round_history),
-    }
+    principal: Principal = Depends(require_admin), state: ServerState = Depends(get_state)
+) -> list[ClientInfo]:
+    """List enrolled identities."""
+    with state.db.session() as session:
+        clients = session.scalars(select(Client).order_by(Client.id)).all()
+    return [
+        ClientInfo(client_id=c.id, scope=c.scope, fingerprint=fingerprint(c.public_key))
+        for c in clients
+    ]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -506,6 +572,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             keys.signature_algorithm,
             settings.crypto_backend,
         )
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        database = Database(settings.resolved_database_url())
+        database.upgrade()
         config = QuantumAggregatorConfig(
             n_qubits=settings.n_qubits,
             vqc_layers=settings.vqc_layers,
@@ -514,21 +583,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings=settings,
             aggregator=QuantumGlobalAggregator(config),
             keys=keys,
+            signer=get_signer(keys.signature_algorithm, settings.crypto_backend),
             tokens=TokenIssuer.from_settings(settings),
+            db=database,
         )
         logger.info("Q-Edge Backend started successfully")
         yield
         logger.info("Shutting down Q-Edge Backend...")
+        database.dispose()
 
     app = FastAPI(
         title="Q-Edge API",
         description=(
-            "Federated Hybrid Quantum-Neural Network Platform API\n\n"
-            "This API provides endpoints for:\n"
-            "- Mobile client registration with PQC authentication\n"
-            "- Federated learning weight submission and aggregation\n"
-            "- Quantum job submission and monitoring\n"
-            "- Health and metrics monitoring"
+            "Coordination server for federated learning with post-quantum "
+            "authentication. Clients are enrolled by an admin and log in with "
+            "an ML-DSA challenge-response."
         ),
         version=__version__,
         docs_url="/docs",
@@ -544,19 +613,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Add PQC authentication middleware
-    app.add_middleware(PQCAuthMiddleware)
-
-    # Rate limiting middleware
-    @app.middleware("http")
-    async def rate_limit_middleware(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
-        response.headers["X-RateLimit-Remaining"] = str(settings.rate_limit_requests - 1)
-        return response
 
     # Request timing middleware
     @app.middleware("http")

@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from qedge.server.app import create_app
-from qedge.server.auth import TokenIssuer
 
 
 @pytest.fixture
@@ -14,195 +13,56 @@ def client(settings):
 
 
 @pytest.fixture
-def auth_headers(settings):
-    token, _ = TokenIssuer.from_settings(settings).issue("test_client", "client")
-    return {"Authorization": f"Bearer {token}"}
+def headers(client, enroll, login):
+    return login(client, "hospital_A", enroll("hospital_A"))
 
 
-class TestHealthEndpoints:
-    def test_root_endpoint(self, client):
-        response = client.get("/")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "Q-Edge API"
-        assert "version" in data
-
-    def test_health_check(self, client):
-        response = client.get("/health")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] in ["healthy", "degraded"]
-        assert "services" in data
-        assert "timestamp" in data
+def test_root_and_health(client):
+    assert client.get("/").json()["name"] == "Q-Edge API"
+    health = client.get("/health").json()
+    assert health["status"] in ("healthy", "degraded")
 
 
-class TestAuthenticationEndpoints:
-    def test_client_registration(self, client):
-        registration_data = {
-            "client_id": "mobile_001",
-            "device_info": {"os": "android", "version": "13"},
-            "public_key": "KYBER_PUBLIC_KEY_BASE64_ENCODED...",
-            "signature": "DILITHIUM_SIGNATURE_BASE64_ENCODED...",
-        }
-
-        response = client.post("/auth/register", json=registration_data)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "access_token" in data
-        assert "session_id" in data
-        assert data["token_type"] == "bearer"
-
-    def test_registration_without_signature_fails(self, client):
-        registration_data = {
-            "client_id": "mobile_001",
-            "device_info": {},
-            "public_key": "KYBER_PUBLIC_KEY...",
-            "signature": "",  # Empty signature
-        }
-
-        response = client.post("/auth/register", json=registration_data)
-
-        assert response.status_code == 401
+def test_timing_header_is_present(client):
+    assert "X-Process-Time" in client.get("/").headers
 
 
-class TestFederatedLearningEndpoints:
-    def test_submit_weights_requires_auth(self, client):
-        submission = {
-            "client_id": "test_client",
-            "round_number": 1,
-            "weights": [0.1, 0.2, 0.3],
-            "n_samples": 100,
-            "local_loss": 0.5,
-        }
+def test_submit_weights_requires_a_token(client):
+    body = {
+        "client_id": "hospital_A",
+        "round_number": 1,
+        "weights": [0.1],
+        "n_samples": 1,
+        "local_loss": 0.5,
+    }
 
-        response = client.post("/fl/submit-weights", json=submission)
-
-        # Should fail without auth
-        assert response.status_code in [401, 403]
-
-    def test_submit_weights_with_auth(self, client, auth_headers):
-        # First register the client
-        registration_data = {
-            "client_id": "test_client",
-            "device_info": {},
-            "public_key": "KYBER_KEY...",
-            "signature": "DILITHIUM_SIG...",
-        }
-        client.post("/auth/register", json=registration_data)
-
-        submission = {
-            "client_id": "test_client",
-            "round_number": 1,
-            "weights": [0.1, 0.2, 0.3],
-            "n_samples": 100,
-            "local_loss": 0.5,
-        }
-
-        response = client.post(
-            "/fl/submit-weights",
-            json=submission,
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "accepted"
-
-    def test_get_global_model_not_found(self, client, auth_headers):
-        # Register client first
-        registration_data = {
-            "client_id": "test_client",
-            "device_info": {},
-            "public_key": "KYBER_KEY...",
-            "signature": "DILITHIUM_SIG...",
-        }
-        client.post("/auth/register", json=registration_data)
-
-        response = client.get("/fl/global-model", headers=auth_headers)
-
-        # Should return 404 when no model exists
-        assert response.status_code == 404
-
-    def test_fl_metrics(self, client):
-        response = client.get("/fl/metrics")
-
-        assert response.status_code == 200
+    assert client.post("/fl/submit-weights", json=body).status_code == 401
 
 
-class TestQuantumEndpoints:
-    def test_submit_quantum_job_requires_auth(self, client):
-        job_data = {
-            "circuit_type": "vqc",
-            "parameters": {"n_qubits": 4},
-            "shots": 1024,
-        }
+def test_submit_weights_after_login(client, headers):
+    body = {
+        "client_id": "hospital_A",
+        "round_number": 1,
+        "weights": [0.1],
+        "n_samples": 1,
+        "local_loss": 0.5,
+    }
 
-        response = client.post("/quantum/submit-job", json=job_data)
+    response = client.post("/fl/submit-weights", json=body, headers=headers)
 
-        assert response.status_code in [401, 403]
-
-    def test_submit_quantum_job(self, client, auth_headers):
-        # Register client
-        registration_data = {
-            "client_id": "test_client",
-            "device_info": {},
-            "public_key": "KYBER_KEY...",
-            "signature": "DILITHIUM_SIG...",
-        }
-        client.post("/auth/register", json=registration_data)
-
-        job_data = {
-            "circuit_type": "vqc",
-            "parameters": {"n_qubits": 4},
-            "shots": 1024,
-        }
-
-        with patch("qedge.server.app.submit_quantum_aggregation") as mock_task:
-            mock_task.delay.return_value.id = "test-job-id"
-
-            response = client.post(
-                "/quantum/submit-job",
-                json=job_data,
-                headers=auth_headers,
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "job_id" in data
-        assert data["status"] == "pending"
+    assert response.status_code == 200
+    assert response.json()["status"] == "accepted"
 
 
-class TestSecurityMiddleware:
-    def test_rate_limit_headers(self, client):
-        response = client.get("/")
-
-        assert "X-RateLimit-Limit" in response.headers
-        assert "X-RateLimit-Remaining" in response.headers
-
-    def test_timing_header(self, client):
-        response = client.get("/")
-
-        assert "X-Process-Time" in response.headers
-
-    def test_pqc_protected_header(self, client, auth_headers):
-        # Register client
-        registration_data = {
-            "client_id": "test_client",
-            "device_info": {},
-            "public_key": "KYBER_KEY...",
-            "signature": "DILITHIUM_SIG...",
-        }
-        client.post("/auth/register", json=registration_data)
-
-        response = client.get("/fl/metrics", headers=auth_headers)
-
-        # PQC headers should be present
-        assert "X-PQC-Protected" in response.headers
+def test_global_model_is_404_before_the_first_round(client, headers):
+    assert client.get("/fl/global-model", headers=headers).status_code == 404
 
 
-# Run tests with: pytest tests/integration/test_backend.py -v
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_submit_quantum_job(client, headers):
+    job = {"circuit_type": "vqc", "parameters": {"n_qubits": 4}, "shots": 1024}
+    with patch("qedge.server.app.submit_quantum_aggregation") as task:
+        task.delay.return_value.id = "job-1"
+        response = client.post("/quantum/submit-job", json=job, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-1"

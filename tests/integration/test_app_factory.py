@@ -2,25 +2,20 @@ from fastapi.testclient import TestClient
 
 from qedge.server.app import create_app
 
-REGISTRATION = {
-    "client_id": "hospital_A",
-    "device_info": {},
-    "public_key": "KYBER_KEY...",
-    "signature": "DILITHIUM_SIG...",
-}
-
 
 def test_lifespan_runs_when_client_is_used_as_context_manager(settings):
     app = create_app(settings)
     with TestClient(app) as client:
-        response = client.get("/fl/metrics")
+        response = client.get("/crypto/keys")
 
     assert response.status_code == 200
 
 
-def test_app_instances_do_not_share_registered_clients(settings):
-    with TestClient(create_app(settings)) as first, TestClient(create_app(settings)) as second:
-        token = first.post("/auth/register", json=REGISTRATION).json()["access_token"]
-        response = second.get("/fl/global-model", headers={"Authorization": f"Bearer {token}"})
+def test_app_instances_do_not_share_enrolled_clients(settings, tmp_path, enroll, login):
+    secret_key = enroll("hospital_A")
+    other = settings.model_copy(update={"data_dir": tmp_path / "other"})
+    with TestClient(create_app(settings)) as first, TestClient(create_app(other)) as second:
+        headers = login(first, "hospital_A", secret_key)
 
-    assert response.status_code == 401
+        assert first.get("/fl/global-model", headers=headers).status_code == 404
+        assert second.get("/fl/global-model", headers=headers).status_code == 401

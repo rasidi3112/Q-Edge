@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from qedge.server.db import default_database_url
+
 MIN_JWT_SECRET_BYTES = 32
 
 
@@ -37,12 +39,19 @@ class Settings(BaseSettings):
     cors_origins: tuple[str, ...] = Field(
         ("http://localhost:3000",), validation_alias=_env("CORS_ORIGINS")
     )
-    rate_limit_requests: int = Field(100, validation_alias=_env("RATE_LIMIT_REQUESTS"))
     debug: bool = Field(False, validation_alias=_env("DEBUG_MODE"))
     crypto_backend: Literal["liboqs", "pure"] = Field(
         "liboqs", validation_alias=_env("QEDGE_CRYPTO_BACKEND")
     )
     key_dir: Path | None = Field(None, validation_alias=_env("QEDGE_KEY_DIR"))
+    data_dir: Path = Field(Path("qedge-data"), validation_alias=_env("QEDGE_DATA_DIR"))
+    database_url: str | None = Field(None, validation_alias=_env("QEDGE_DATABASE_URL"))
+
+    def resolved_database_url(self) -> str:
+        """``database_url``, or a SQLite file ``qedge.db`` under ``data_dir``."""
+        if self.database_url:
+            return self.database_url
+        return default_database_url(self.data_dir)
 
     @field_validator("jwt_secret")
     @classmethod
