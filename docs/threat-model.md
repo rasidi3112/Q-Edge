@@ -59,10 +59,11 @@ secret key file.
   `results/summary/robustness.json`. None of them detects targeted
   backdoors that keep main-task accuracy, and all of them assume a known
   bound on the number of attackers.
-- **A curious server.** The server decrypts every update and sees it in the
-  clear. Secure aggregation, which hides individual updates, comes in Fase 6
-  and conflicts with inspecting updates for robustness; both cannot run in
-  the same round.
+- **A curious server.** The HTTP server decrypts every update and sees it
+  in the clear. `qedge.fl.secagg` hides individual updates behind pairwise
+  masks (ADR 0010), but it runs only in the simulator so far. It has no
+  dropout recovery, and it rules out robust aggregation: a round can hide
+  updates or inspect them, not both.
 - **Inference from the global model.** No differential privacy is applied.
 - **Stolen credentials.** A stolen token works until `exp` (15 minutes by
   default); there is no revocation list. A stolen client key works until an

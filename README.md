@@ -277,6 +277,40 @@ does nothing against inflated sample counts, and the sample cap does nothing
 against anything else. All defaults assume the attacker fraction is known to
 be at most 30%.
 
+### Secure aggregation
+
+```bash
+qedge simulate --secure-aggregation --secagg-backend liboqs
+```
+
+Pairwise masking after Bonawitz et al. (CCS 2017): each pair of clients
+derives a mask from an X25519 + ML-KEM-768 shared secret, one adds it and
+the other subtracts it, so the server learns only the weighted sum. All
+messages are signed with ML-DSA-65. Weights are fixed-point integers modulo
+2^64 (step 2^-20). There is no dropout recovery: a missing client fails the
+round ([ADR 0010](docs/decisions/0010-secure-aggregation-without-dropouts.md)).
+Secure aggregation and the robust rules exclude each other, because the
+rules need the individual updates. On breast_cancer the masked run ends at
+the same accuracy and test loss (to 1e-6) as plain FedAvg.
+
+Cost of one round with liboqs on a laptop CPU, in-process, no network
+(median of 3, [`results/summary/secagg.json`](results/summary/secagg.json),
+`python bench/secagg.py`):
+
+| Clients | Parameters | Up per client, KiB | Plain float32, KiB | Down per client, KiB | Client ms | Server ms |
+|---|---|---|---|---|---|---|
+| 5 | 1,210 | 25.8 | 4.7 | 26.3 | 1.4 | 1.2 |
+| 5 | 100,000 | 797.6 | 390.6 | 26.3 | 3.5 | 3.2 |
+| 10 | 1,210 | 36.6 | 4.7 | 59.2 | 2.6 | 3.8 |
+| 10 | 100,000 | 808.4 | 390.6 | 59.2 | 6.7 | 7.7 |
+| 20 | 1,210 | 58.2 | 4.7 | 125.0 | 5.1 | 13.2 |
+| 20 | 100,000 | 830.0 | 390.6 | 125.0 | 13.2 | 20.9 |
+| 50 | 1,210 | 123.1 | 4.7 | 322.5 | 12.7 | 75.9 |
+| 50 | 100,000 | 894.9 | 390.6 | 322.5 | 32.6 | 94.9 |
+
+The upload doubles because ring elements take 8 bytes, and the per-client
+key exchange grows linearly with the number of clients.
+
 ### Running the server
 
 ```bash
@@ -352,6 +386,7 @@ Q-Edge/
 │   │   ├── privacy.py        # Update clipping and Gaussian noise (no epsilon)
 │   │   ├── remote.py         # Client for the Q-Edge server API
 │   │   ├── robust.py         # Median, trimmed mean, Krum, clipping, sample cap
+│   │   ├── secagg.py         # Pairwise-masked secure aggregation
 │   │   ├── simulation.py     # In-process simulation (`qedge simulate`)
 │   │   ├── strategies.py     # FedAvg, FedAdam, FedYogi
 │   │   ├── training.py       # Local SGD with the FedProx term
@@ -371,7 +406,7 @@ Q-Edge/
 │       ├── settings.py       # Environment settings (pydantic-settings)
 │       └── worker.py         # Celery task for bounded circuit runs
 ├── tests/                    # Unit and integration tests
-├── bench/crypto.py           # Crypto benchmark -> results/summary/crypto.json
+├── bench/                    # crypto.py and secagg.py benchmarks -> results/summary/
 ├── experiments/              # FL baseline, compression and ablation scripts; Flower app config
 ├── results/summary/          # Committed JSON summaries (results/runs/ is ignored)
 ├── docs/threat-model.md       # Assets, adversaries, what is not protected

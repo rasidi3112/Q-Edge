@@ -1,0 +1,97 @@
+{
+  "description": "Cost of one secure-aggregation round for 5, 10, 20 and 50 clients.",
+  "created": "2026-10-16T18:39:34+00:00",
+  "backend": "liboqs",
+  "kem": "X25519-ML-KEM-768",
+  "signature": "ML-DSA-65",
+  "ring_bits": 64,
+  "repeats": 3,
+  "environment": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu_count": 8,
+    "python": "3.13.5",
+    "packages": {
+      "q-edge": "0.2.0.dev0",
+      "numpy": "2.5.4",
+      "cryptography": "50.0.2",
+      "liboqs-python": "0.16.0.1",
+      "kyber-py": "1.2.0",
+      "dilithium-py": "1.5.1"
+    }
+  },
+  "results": [
+    {
+      "clients": 5,
+      "parameters": 1210,
+      "bytes_up_per_client": 26380.0,
+      "bytes_down_per_client": 26958.0,
+      "plain_bytes_up_per_client": 4840,
+      "client_seconds": 0.0013735666012507862,
+      "server_seconds": 0.001185916000395082
+    },
+    {
+      "clients": 5,
+      "parameters": 100000,
+      "bytes_up_per_client": 816700.0,
+      "bytes_down_per_client": 26958.0,
+      "plain_bytes_up_per_client": 400000,
+      "client_seconds": 0.003538391998154111,
+      "server_seconds": 0.0031966250026016496
+    },
+    {
+      "clients": 10,
+      "parameters": 1210,
+      "bytes_up_per_client": 37452.5,
+      "bytes_down_per_client": 60655.5,
+      "plain_bytes_up_per_client": 4840,
+      "client_seconds": 0.002604812601930462,
+      "server_seconds": 0.0037573750014416873
+    },
+    {
+      "clients": 10,
+      "parameters": 100000,
+      "bytes_up_per_client": 827772.5,
+      "bytes_down_per_client": 60655.5,
+      "plain_bytes_up_per_client": 400000,
+      "client_seconds": 0.006726804099162109,
+      "server_seconds": 0.007681583003432024
+    },
+    {
+      "clients": 20,
+      "parameters": 1210,
+      "bytes_up_per_client": 59597.5,
+      "bytes_down_per_client": 128050.5,
+      "plain_bytes_up_per_client": 4840,
+      "client_seconds": 0.005057095701340586,
+      "server_seconds": 0.013242957000329625
+    },
+    {
+      "clients": 20,
+      "parameters": 100000,
+      "bytes_up_per_client": 849917.5,
+      "bytes_down_per_client": 128050.5,
+      "plain_bytes_up_per_client": 400000,
+      "client_seconds": 0.013153210249947733,
+      "server_seconds": 0.02088424999237759
+    },
+    {
+      "clients": 50,
+      "parameters": 1210,
+      "bytes_up_per_client": 126032.5,
+      "bytes_down_per_client": 330235.5,
+      "plain_bytes_up_per_client": 4840,
+      "client_seconds": 0.012668734179460444,
+      "server_seconds": 0.07590595899819164
+    },
+    {
+      "clients": 50,
+      "parameters": 100000,
+      "bytes_up_per_client": 916352.5,
+      "bytes_down_per_client": 330235.5,
+      "plain_bytes_up_per_client": 400000,
+      "client_seconds": 0.032588661579939074,
+      "server_seconds": 0.09487312399869552
+    }
+  ]
+}
