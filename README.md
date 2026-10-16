@@ -6,7 +6,7 @@
 
 <img src="https://img.shields.io/badge/Research_Project-Quantum_ML-6C63FF?style=for-the-badge" alt="Research"/>
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![PennyLane](https://img.shields.io/badge/PennyLane-Quantum-00D4AA?style=for-the-badge&logo=atom&logoColor=white)](https://pennylane.ai)
 [![Flutter](https://img.shields.io/badge/Flutter-Mobile-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -31,7 +31,7 @@
 
 ## What is Q-Edge?
 
-Q-Edge is an **experimental platform** that explores the intersection of three cutting-edge technologies:
+Q-Edge is an **experimental platform** that combines federated learning, quantum machine learning and post-quantum cryptography:
 
 | Technology | Description | Status |
 |------------|-------------|--------|
@@ -70,7 +70,7 @@ Q-Edge is an **experimental platform** that explores the intersection of three c
 │   │ FL Client   │          │  + Celery   │      │ Circuits  │   │
 │   └─────────────┘          └─────────────┘      └───────────┘   │
 │                                                                 │
-│   Security: Kyber-1024 KEM + Dilithium-5 Signatures             │
+│   Security: Kyber/Dilithium, simulated unless liboqs is present │
 │   Aggregation: FedAvg + Quantum-Enhanced                        │
 │   Error Mitigation: Zero-Noise Extrapolation                    │
 │                                                                 │
@@ -111,7 +111,7 @@ Q-Edge is an **experimental platform** that explores the intersection of three c
 ### Prerequisites
 
 ```bash
-Python 3.10+
+Python 3.11+
 Flutter 3.0+
 Docker (optional)
 ```
@@ -119,20 +119,51 @@ Docker (optional)
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/rasidi3112/q-edge.git
-cd q-edge
+git clone https://github.com/rasidi3112/Q-Edge.git
+cd Q-Edge
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Core quantum and aggregation modules
+pip install -e .
 
 # Run demo
 python demo.py
 ```
+
+Dependencies are declared only in `pyproject.toml`. Optional extras:
+
+| Extra | Adds |
+|-------|------|
+| `server` | FastAPI server and Celery worker |
+| `fl` | PyTorch and Flower for `qedge.fl.client` |
+| `pqc` | liboqs-python (needs the liboqs C library) |
+| `pqc-pure` | Reserved for a pure-Python ML-KEM/ML-DSA backend; empty for now |
+| `dev` | pytest, ruff, mypy, pre-commit |
+
+### Development
+
+```bash
+pip install -e ".[dev,server]"
+pre-commit install
+
+ruff check .
+ruff format --check .
+mypy src/qedge
+pytest -m "not slow"   # the suite CI runs on every push
+pytest -m slow         # long-running tests, run weekly in CI
+```
+
+### Docker
+
+```bash
+cp .env.example .env   # set JWT_SECRET_KEY and REDIS_PASSWORD
+docker compose up --build
+```
+
+Compose starts the API (published on `127.0.0.1:8000`), one Celery worker and
+Redis. Design decisions are recorded in [`docs/decisions/`](docs/decisions/).
 
 ### Run Flutter App
 
@@ -147,31 +178,28 @@ flutter run -d chrome  # or your preferred device
 ## Project Structure
 
 ```
-q-edge/
-├── src/
-│   ├── quantum/              # Quantum ML modules
-│   │   ├── circuits.py       # Variational Quantum Circuits
-│   │   ├── kernels.py        # Quantum Kernel Alignment
-│   │   ├── error_mitigation.py # Zero-Noise Extrapolation
-│   │   └── aggregator.py     # Quantum-Enhanced Aggregation
-│   │
-│   ├── backend/              # FastAPI Backend
-│   │   ├── main.py           # API endpoints
-│   │   ├── security.py       # PQC implementation
-│   │   └── celery_app.py     # Async task queue
-│   │
-│   └── mobile/               # Mobile FL Client
-│       ├── fl_client.py      # Flower-based FL client
-│       └── pqc_transport.py  # PQC transport layer
-│
+Q-Edge/
+├── src/qedge/
+│   ├── quantum/
+│   │   ├── circuits.py       # Variational quantum circuits
+│   │   ├── kernels.py        # Quantum kernel alignment
+│   │   └── zne.py            # Zero-noise extrapolation, readout mitigation
+│   ├── fl/
+│   │   ├── aggregator.py     # Server-side aggregation
+│   │   └── client.py         # Flower client (needs the `fl` extra)
+│   ├── crypto/
+│   │   └── transport.py      # Client message transport (simulated by default)
+│   └── server/
+│       ├── app.py            # FastAPI app factory and endpoints
+│       ├── auth.py           # JWT, PQC provider, middleware
+│       ├── settings.py       # Environment settings
+│       └── worker.py         # Celery app and tasks
+├── tests/                    # Unit and integration tests
+├── docs/decisions/           # Architecture decision records
 ├── mobile_app/               # Flutter UI
-│   └── lib/main.dart         # Mobile dashboard
-│
-├── tests/                    # Unit & integration tests
-├── docs/                     # Documentation
 ├── demo.py                   # Demo script
-├── requirements.txt          # Python dependencies
-└── docker-compose.yml        # Container orchestration
+├── Dockerfile                # Targets: api, worker
+└── docker-compose.yml        # API, worker, Redis
 ```
 
 ---
@@ -212,28 +240,9 @@ def vqc(params, data):
 | **Dilithium-5** | Digital Signatures | NIST Level 5 |
 | **AES-256-GCM** | Symmetric Encryption | NIST Approved |
 
----
-
-## Simulation Results
-
-> ⚠️ **Note**: Results from **local simulator** with **synthetic data**
-
-### Quantum Circuit Performance
-
-| Qubits | Layers | Parameters | Execution Time |
-|--------|--------|------------|----------------|
-| 4 | 2 | 24 | ~12ms |
-| 8 | 4 | 96 | ~45ms |
-| 16 | 6 | 288 | ~180ms |
-
-### Federated Learning Simulation
-
-| Clients | Rounds | Convergence |
-|---------|--------|-------------|
-| 5 | 10 | ~95% |
-| 10 | 20 | ~97% |
-
-*Simulated convergence with synthetic random data*
+Without liboqs the code falls back to simulated versions of these primitives
+that provide no security, and the client transport uses its simulated cipher
+by default.
 
 ---
 

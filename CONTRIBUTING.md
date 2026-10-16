@@ -1,46 +1,47 @@
 # Contributing to Q-Edge
 
-Thank you for your interest in contributing to Q-Edge! 🎉
+## Reporting issues
 
-## How to Contribute
+Check whether the issue already exists, use a specific title, and include the
+steps, inputs and versions needed to reproduce it.
 
-### Reporting Issues
-
-- Check if the issue already exists
-- Use a clear and descriptive title
-- Provide steps to reproduce the issue
-
-### Pull Requests
-
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for new features
-4. Ensure all tests pass
-5. Submit a pull request
-
-### Code Style
-
-- Python: Follow PEP 8
-- Dart: Follow Flutter style guide
-- Use type hints where possible
-
-## Development Setup
+## Development setup
 
 ```bash
-git clone https://github.com/rasidi3112/q-edge.git
-cd q-edge
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+git clone https://github.com/rasidi3112/Q-Edge.git
+cd Q-Edge
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,server]"
+pre-commit install
 ```
 
-## Running Tests
+Dependencies are declared only in `pyproject.toml`; add a package there only if
+code imports it (see `docs/decisions/0002-pyproject-is-the-only-dependency-list.md`).
+
+## Checks
+
+CI runs these on every push and pull request, and each one can fail the build:
 
 ```bash
-pytest tests/
+ruff check .
+ruff format --check .
+mypy src/qedge
+pytest -m "not slow"
 ```
 
-## Questions?
+Tests that take more than a few seconds are marked `@pytest.mark.slow` and run
+in a separate weekly job (`pytest -m slow`).
 
-Feel free to open an issue for any questions!
+## Pull requests
+
+1. Fork the repository and create a branch.
+2. For a bug fix, add a test that fails without the fix.
+3. Keep each commit to one concern.
+4. Record design decisions that are hard to reverse in `docs/decisions/`.
+
+## Code style
+
+- Python: ruff (lint and format), type hints, Google-style docstrings for
+  public API.
+- Dart: the Flutter style guide.
