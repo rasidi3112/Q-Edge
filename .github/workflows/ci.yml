@@ -84,6 +84,23 @@ jobs:
       - run: python -c "from qedge.crypto.backends import available_backends as a; assert 'liboqs' in a(), a()"
       - run: pytest -m "not slow"
 
+  flutter:
+    name: Flutter dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile_app
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install Flutter 3.32.0
+        run: |
+          git clone --depth 1 --branch 3.32.0 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+
   docker:
     name: Docker build (${{ matrix.target }})
     runs-on: ubuntu-latest
