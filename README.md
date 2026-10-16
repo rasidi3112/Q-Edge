@@ -241,6 +241,42 @@ qubits, the barren-plateau scaling of McClean et al. (2018). Off-diagonal
 0.005 at 8 qubits (variance 1.5e-04), so that kernel
 is close to the identity; the `angle` map keeps a mean of 0.16.
 
+### Malicious clients and robust aggregation
+
+```bash
+qedge simulate --dataset digits --model mlp --attack scaling --attack-fraction 0.3 --defense multi_krum
+```
+
+Attacks (`qedge.fl.attacks`): `label_flip`; `scaling` (flipped labels,
+update multiplied by the client count, i.e. model replacement);
+`random_noise` (N(0, 1) per coordinate); `fake_samples` (flipped labels and
+100x the real sample count). Defenses (`qedge.fl.robust`) replace FedAvg:
+coordinate-wise median, trimmed mean (β = 0.2), Krum and Multi-Krum
+(f = 3), clipping to the median update norm, and capping sample counts at
+3x the median claim. The server uses the same rules through
+`QEDGE_AGGREGATION` (all except `norm_clip`).
+
+Digits, MLP, 10 clients, α = 0.5, 30 rounds, final accuracy, mean ± std
+over seeds 0-2 ([`results/summary/robustness.json`](results/summary/robustness.json),
+`python -m experiments.robustness`, about 3 minutes; breast_cancer and the
+10% and 20% rows are in the file):
+
+| Attack (30% of clients) | FedAvg | Median | Trimmed mean | Krum | Multi-Krum | Norm clip | Bounded |
+|---|---|---|---|---|---|---|---|
+| none | 0.95 ± 0.00 | 0.93 ± 0.01 | 0.94 ± 0.01 | 0.68 ± 0.07 | 0.92 ± 0.00 | 0.95 ± 0.01 | 0.95 ± 0.00 |
+| label_flip | 0.70 ± 0.31 | 0.88 ± 0.03 | 0.89 ± 0.03 | 0.70 ± 0.08 | 0.94 ± 0.01 | 0.85 ± 0.14 | 0.70 ± 0.31 |
+| scaling | 0.18 ± 0.09 | 0.91 ± 0.02 | 0.60 ± 0.12 | 0.75 ± 0.11 | 0.94 ± 0.02 | 0.85 ± 0.14 | 0.18 ± 0.09 |
+| random_noise | 0.58 ± 0.06 | 0.93 ± 0.01 | 0.89 ± 0.02 | 0.75 ± 0.11 | 0.94 ± 0.02 | 0.92 ± 0.03 | 0.58 ± 0.06 |
+| fake_samples | 0.03 ± 0.02 | 0.88 ± 0.03 | 0.89 ± 0.03 | 0.70 ± 0.08 | 0.94 ± 0.01 | 0.03 ± 0.02 | 0.29 ± 0.16 |
+
+FedAvg is broken by every attack. Multi-Krum is the only rule that stays
+within 0.03 of its clean accuracy in every row, but even with no attack it
+costs 0.03. Krum, which keeps one client's model, loses 0.28 on non-IID data.
+Trimmed mean with β = 0.2 fails once 30% scale their updates. Norm clipping
+does nothing against inflated sample counts, and the sample cap does nothing
+against anything else. All defaults assume the attacker fraction is known to
+be at most 30%.
+
 ### Running the server
 
 ```bash
@@ -308,12 +344,14 @@ Q-Edge/
 │   │   ├── noise.py          # Depolarizing, amplitude damping and readout noise
 │   │   └── zne.py            # ZNE via fold_global, tensored readout mitigation
 │   ├── fl/
+│   │   ├── attacks.py        # Simulated malicious clients
 │   │   ├── compression.py    # Top-k with error feedback
 │   │   ├── flower_app.py     # Flower ClientApp and ServerApp
 │   │   ├── models.py         # Logistic regression and MLP (PyTorch)
 │   │   ├── partition.py      # Datasets and Dirichlet split
 │   │   ├── privacy.py        # Update clipping and Gaussian noise (no epsilon)
 │   │   ├── remote.py         # Client for the Q-Edge server API
+│   │   ├── robust.py         # Median, trimmed mean, Krum, clipping, sample cap
 │   │   ├── simulation.py     # In-process simulation (`qedge simulate`)
 │   │   ├── strategies.py     # FedAvg, FedAdam, FedYogi
 │   │   ├── training.py       # Local SGD with the FedProx term

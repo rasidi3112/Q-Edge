@@ -51,8 +51,14 @@ secret key file.
 ## What is not protected
 
 - **A malicious client within the rules.** It can claim any `n_samples` up
-  to the limit and send any finite weights, so it can bias or destroy the
-  global model (scaling, label flipping). Robust aggregation comes in Fase 5.
+  to the limit and send any finite weights. With the default
+  `QEDGE_AGGREGATION=fedavg` that is enough to destroy the global model.
+  The robust rules (`median`, `trimmed_mean`, `krum`, `multi_krum`,
+  `bounded`) limit the damage while attackers are a minority below the
+  rule's tolerance, at some cost in accuracy. Measured effects are in
+  `results/summary/robustness.json`. None of them detects targeted
+  backdoors that keep main-task accuracy, and all of them assume a known
+  bound on the number of attackers.
 - **A curious server.** The server decrypts every update and sees it in the
   clear. Secure aggregation, which hides individual updates, comes in Fase 6
   and conflicts with inspecting updates for robustness; both cannot run in

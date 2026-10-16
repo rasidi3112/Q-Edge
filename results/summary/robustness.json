@@ -1,0 +1,2781 @@
+{
+  "description": "Final accuracy under malicious clients for each aggregation rule.",
+  "setup": {
+    "clients": 10,
+    "rounds": 30,
+    "alpha": 0.5,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "attack_scales": {
+      "scaling": "number of clients",
+      "random_noise": 1.0,
+      "fake_samples": 100
+    },
+    "defense_options": {
+      "trimmed_mean": {
+        "beta": 0.2
+      },
+      "krum": {
+        "f": 3
+      },
+      "multi_krum": {
+        "f": 3,
+        "m": 7
+      },
+      "norm_clip": {
+        "clip": "median delta norm"
+      },
+      "bounded": {
+        "cap": 3.0
+      }
+    }
+  },
+  "results": [
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9766081968943278,
+        "std": 0.010128947864917926
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9824561476707458,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.013399351553460311
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.013399351553460311
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9239766200383505,
+        "std": 0.0563956289491791
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9502923885981241,
+        "std": 0.040515791459671706
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9707602262496948,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9795321623484293,
+        "std": 0.005064491138837816
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9824561476707458,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.8859649101893107,
+        "std": 0.15959126944927596
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.7017543911933899,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9532163540522257,
+        "std": 0.0354513347335916
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.028197791296917466
+      },
+      "per_seed": [
+        0.9298245906829834,
+        0.9824561476707458,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9239766200383505,
+        "std": 0.0563956289491791
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9356725215911865,
+        "std": 0.06641998705138574
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.859649121761322,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.6169590751330057,
+        "std": 0.3126468114186045
+      },
+      "per_seed": [
+        0.5263158082962036,
+        0.359649121761322,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9532163540522257,
+        "std": 0.0354513347335916
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.028197791296917466
+      },
+      "per_seed": [
+        0.9298245906829834,
+        0.9824561476707458,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9239766200383505,
+        "std": 0.0563956289491791
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.5847953259944916,
+        "std": 0.33024112973881936
+      },
+      "per_seed": [
+        0.42105263471603394,
+        0.3684210479259491,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9298245708147684,
+        "std": 0.04385963082313875
+      },
+      "per_seed": [
+        0.9298245906829834,
+        0.8859649300575256,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9590643246968588,
+        "std": 0.03320998696582516
+      },
+      "per_seed": [
+        0.9210526347160339,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.02320834641484659
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9239766200383505,
+        "std": 0.0563956289491791
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9707602262496948,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9327485164006551,
+        "std": 0.0354513347335916
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9122806787490845,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.3625731070836385,
+        "std": 0.5064476169288215
+      },
+      "per_seed": [
+        0.07017543911933899,
+        0.07017543911933899,
+        0.9473684430122375
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9532163540522257,
+        "std": 0.0354513347335916
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.028197791296917466
+      },
+      "per_seed": [
+        0.9298245906829834,
+        0.9824561476707458,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9239766200383505,
+        "std": 0.0563956289491791
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.3596491167942683,
+        "std": 0.531769973686332
+      },
+      "per_seed": [
+        0.05263157933950424,
+        0.05263157933950424,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9298245708147684,
+        "std": 0.06077372160226527
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.859649121761322,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.847953200340271,
+        "std": 0.15452877254728453
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.6754385828971863,
+        0.8947368264198303
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9590643048286438,
+        "std": 0.041454522557878855
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9912280440330505
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.02207554586344184
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.93274853626887,
+        "std": 0.06345770120684718
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9736841917037964,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9649122953414917,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9093567331631979,
+        "std": 0.049879304566212895
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.8684210777282715,
+        0.8947368264198303
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.5321637491385142,
+        "std": 0.3345238828556486
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.25438597798347473,
+        0.4385964870452881
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9561403393745422,
+        "std": 0.03823596704029823
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.02207554586344184
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.93274853626887,
+        "std": 0.06345770120684718
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9736841917037964,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9649122953414917,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.33625730872154236,
+        "std": 0.09379540234359048
+      },
+      "per_seed": [
+        0.31578946113586426,
+        0.25438597798347473,
+        0.4385964870452881
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9093567331631979,
+        "std": 0.0746043876786477
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.8245614171028137,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9532163540522257,
+        "std": 0.0354513347335916
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.00877192616464395
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.93274853626887,
+        "std": 0.06345770120684718
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9736841917037964,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9707602262496948,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9005847970644633,
+        "std": 0.05840640441066775
+      },
+      "per_seed": [
+        0.8859649300575256,
+        0.8508771657943726,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.03801169618964195,
+        "std": 0.018260228201541693
+      },
+      "per_seed": [
+        0.05263157933950424,
+        0.04385964944958687,
+        0.017543859779834747
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9590643048286438,
+        "std": 0.041454522557878855
+      },
+      "per_seed": [
+        0.9122806787490845,
+        0.9736841917037964,
+        0.9912280440330505
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.02207554586344184
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.93274853626887,
+        "std": 0.06345770120684718
+      },
+      "per_seed": [
+        0.859649121761322,
+        0.9736841917037964,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9473684231440226,
+        "std": 0.038235946528934674
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9649122953414917,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.02923976629972458,
+        "std": 0.013399344237130672
+      },
+      "per_seed": [
+        0.02631578966975212,
+        0.04385964944958687,
+        0.017543859779834747
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.6257310012976328,
+        "std": 0.2409221903427376
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.4736842215061188,
+        0.5
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9122806986172994,
+        "std": 0.05478066611238798
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.8684210777282715,
+        0.8947368264198303
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.013399351553460311
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.926900585492452,
+        "std": 0.06223332698827614
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.859649121761322,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9532163739204407,
+        "std": 0.04327089431626624
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9736841917037964,
+        "std": 0.0
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.01339932553986065
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.8918128609657288,
+        "std": 0.08337177768020944
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.8070175647735596,
+        0.8947368264198303
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.5350877245267233,
+        "std": 0.34154249542139564
+      },
+      "per_seed": [
+        0.9210526347160339,
+        0.2719298303127289,
+        0.41228070855140686
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.013399351553460311
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.47660818696022034,
+        "std": 0.2260935454238057
+      },
+      "per_seed": [
+        0.719298243522644,
+        0.2719298303127289,
+        0.4385964870452881
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9532163739204407,
+        "std": 0.04327089431626624
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9736841917037964,
+        "std": 0.0
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.01339932553986065
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9473684430122375,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.4210526297489802,
+        "std": 0.2501153858238875
+      },
+      "per_seed": [
+        0.6754385828971863,
+        0.17543859779834747,
+        0.41228070855140686
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9298245708147684,
+        "std": 0.03162764610250153
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.9210526347160339,
+        0.9035087823867798
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9649122754732767,
+        "std": 0.015193404590998038
+      },
+      "per_seed": [
+        0.9473684430122375,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9619883100191752,
+        "std": 0.018260225218929886
+      },
+      "per_seed": [
+        0.9473684430122375,
+        0.9561403393745422,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9532163739204407,
+        "std": 0.04327089431626624
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9736841917037964,
+        "std": 0.0
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9707602262496948,
+        "std": 0.00506445672608011
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9649122953414917
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9210526347160339,
+        "std": 0.03823596704029823
+      },
+      "per_seed": [
+        0.9649122953414917,
+        0.8947368264198303,
+        0.9035087823867798
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.06432748585939407,
+        "std": 0.0664199811475022
+      },
+      "per_seed": [
+        0.14035087823867798,
+        0.035087719559669495,
+        0.017543859779834747
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9678362607955933,
+        "std": 0.013399351553460311
+      },
+      "per_seed": [
+        0.9561403393745422,
+        0.9649122953414917,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.926900585492452,
+        "std": 0.06223332698827614
+      },
+      "per_seed": [
+        0.9385964870452881,
+        0.859649121761322,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.9532163739204407,
+        "std": 0.04327089431626624
+      },
+      "per_seed": [
+        0.9035087823867798,
+        0.9736841917037964,
+        0.9824561476707458
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9736841917037964,
+        "std": 0.0
+      },
+      "per_seed": [
+        0.9736841917037964,
+        0.9736841917037964,
+        0.9736841917037964
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.055555554727713265,
+        "std": 0.05139881648372774
+      },
+      "per_seed": [
+        0.11403508484363556,
+        0.035087719559669495,
+        0.017543859779834747
+      ]
+    },
+    {
+      "dataset": "breast_cancer",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.40058480203151703,
+        "std": 0.33750089720221416
+      },
+      "per_seed": [
+        0.7894737124443054,
+        0.22807016968727112,
+        0.18421052396297455
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9518518447875977,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.949999988079071,
+        0.949999988079071,
+        0.9555555582046509
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9314814805984497,
+        "std": 0.005782392085895397
+      },
+      "per_seed": [
+        0.9361110925674438,
+        0.925000011920929,
+        0.9333333373069763
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9398148059844971,
+        "std": 0.01051650090176013
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9277777671813965,
+        0.9444444179534912
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6759259303410848,
+        "std": 0.070946725720966
+      },
+      "per_seed": [
+        0.6194444298744202,
+        0.7555555701255798,
+        0.6527777910232544
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9222222169240316,
+        "std": 0.0027777850628432077
+      },
+      "per_seed": [
+        0.9222221970558167,
+        0.925000011920929,
+        0.9194444417953491
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9462962746620178,
+        "std": 0.011226255179620106
+      },
+      "per_seed": [
+        0.9583333134651184,
+        0.9444444179534912,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": null,
+      "fraction": 0.0,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9518518447875977,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.949999988079071,
+        0.949999988079071,
+        0.9555555582046509
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.9444444179534912,
+        "std": 0.0
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.9444444179534912,
+        0.9444444179534912
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9277777870496114,
+        "std": 0.017347200118622782
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.9416666626930237,
+        0.9083333611488342
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9388888875643412,
+        "std": 0.0027777850628432077
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9416666626930237,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6675925850868225,
+        "std": 0.04667436791529411
+      },
+      "per_seed": [
+        0.6166666746139526,
+        0.7083333134651184,
+        0.6777777671813965
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9175926049550375,
+        "std": 0.006990589983957895
+      },
+      "per_seed": [
+        0.9166666865348816,
+        0.925000011920929,
+        0.9111111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9444444378217062,
+        "std": 0.016896562801919805
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.9638888835906982,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.9444444179534912,
+        "std": 0.0
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.9444444179534912,
+        0.9444444179534912
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.5796296199162801,
+        "std": 0.11167679214800265
+      },
+      "per_seed": [
+        0.5083333253860474,
+        0.5222222208976746,
+        0.7083333134651184
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9259259303410848,
+        "std": 0.010516514021494134
+      },
+      "per_seed": [
+        0.9305555820465088,
+        0.9333333373069763,
+        0.9138888716697693
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9407407442728678,
+        "std": 0.0032074754947476543
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9444444179534912,
+        0.9388889074325562
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6638888915379842,
+        "std": 0.04589640812036498
+      },
+      "per_seed": [
+        0.6166666746139526,
+        0.7083333134651184,
+        0.6666666865348816
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9175926049550375,
+        "std": 0.006990589983957895
+      },
+      "per_seed": [
+        0.9166666865348816,
+        0.925000011920929,
+        0.9111111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9444444378217062,
+        "std": 0.016896562801919805
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.9638888835906982,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.5796296199162801,
+        "std": 0.11167679214800265
+      },
+      "per_seed": [
+        0.5083333253860474,
+        0.5222222208976746,
+        0.7083333134651184
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.7435185114542643,
+        "std": 0.08759178662329355
+      },
+      "per_seed": [
+        0.7388888597488403,
+        0.6583333611488342,
+        0.8333333134651184
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9296296238899231,
+        "std": 0.013702464165193702
+      },
+      "per_seed": [
+        0.9361110925674438,
+        0.9388889074325562,
+        0.9138888716697693
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9398148059844971,
+        "std": 0.0032075099075053602
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.9416666626930237,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6638888915379842,
+        "std": 0.04589640812036498
+      },
+      "per_seed": [
+        0.6166666746139526,
+        0.7083333134651184,
+        0.6666666865348816
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9175926049550375,
+        "std": 0.006990589983957895
+      },
+      "per_seed": [
+        0.9166666865348816,
+        0.925000011920929,
+        0.9111111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9453703562418619,
+        "std": 0.009755246396915584
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.9555555582046509,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.7435185114542643,
+        "std": 0.08759178662329355
+      },
+      "per_seed": [
+        0.7388888597488403,
+        0.6583333611488342,
+        0.8333333134651184
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.08611111218730609,
+        "std": 0.06092142075873853
+      },
+      "per_seed": [
+        0.07222222536802292,
+        0.03333333507180214,
+        0.1527777761220932
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9277777870496114,
+        "std": 0.017347200118622782
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.9416666626930237,
+        0.9083333611488342
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9388888875643412,
+        "std": 0.0027777850628432077
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9416666626930237,
+        0.9361110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6675925850868225,
+        "std": 0.04667436791529411
+      },
+      "per_seed": [
+        0.6166666746139526,
+        0.7083333134651184,
+        0.6777777671813965
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9175926049550375,
+        "std": 0.006990589983957895
+      },
+      "per_seed": [
+        0.9166666865348816,
+        0.925000011920929,
+        0.9111111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.07407407400508721,
+        "std": 0.051244792759916655
+      },
+      "per_seed": [
+        0.06111111119389534,
+        0.03055555559694767,
+        0.13055555522441864
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.1,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.8814814686775208,
+        "std": 0.03892195636986584
+      },
+      "per_seed": [
+        0.8833333253860474,
+        0.8416666388511658,
+        0.9194444417953491
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.8842592438062032,
+        "std": 0.06372765786430201
+      },
+      "per_seed": [
+        0.9277777671813965,
+        0.9138888716697693,
+        0.8111110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9157407482465109,
+        "std": 0.0331398959766203
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9305555820465088,
+        0.8777777552604675
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9212962985038757,
+        "std": 0.025051393733182704
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9194444417953491,
+        0.8972222208976746
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.7731481393178304,
+        "std": 0.06390903275506586
+      },
+      "per_seed": [
+        0.7083333134651184,
+        0.8361111283302307,
+        0.7749999761581421
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9351851940155029,
+        "std": 0.008929301865010864
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.9388889074325562,
+        0.925000011920929
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.91481480995814,
+        "std": 0.03450859748053911
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.9361110925674438,
+        0.875
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.8842592438062032,
+        "std": 0.06372765786430201
+      },
+      "per_seed": [
+        0.9277777671813965,
+        0.9138888716697693,
+        0.8111110925674438
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.3592592577139537,
+        "std": 0.07298387564404793
+      },
+      "per_seed": [
+        0.3333333432674408,
+        0.4416666626930237,
+        0.3027777671813965
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9259259104728699,
+        "std": 0.025204908736579813
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.9361110925674438,
+        0.8972222208976746
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9361111124356588,
+        "std": 0.016666680574425996
+      },
+      "per_seed": [
+        0.9527778029441833,
+        0.9361110925674438,
+        0.9194444417953491
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.7824074029922485,
+        "std": 0.06439015516939144
+      },
+      "per_seed": [
+        0.7083333134651184,
+        0.824999988079071,
+        0.8138889074325562
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.935185174147288,
+        "std": 0.018907946805719354
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.949999988079071,
+        0.9138888716697693
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.91481480995814,
+        "std": 0.03450859748053911
+      },
+      "per_seed": [
+        0.9333333373069763,
+        0.9361110925674438,
+        0.875
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.3592592577139537,
+        "std": 0.07298387564404793
+      },
+      "per_seed": [
+        0.3333333432674408,
+        0.4416666626930237,
+        0.3027777671813965
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.6870370308558146,
+        "std": 0.02796233230392082
+      },
+      "per_seed": [
+        0.7166666388511658,
+        0.6833333373069763,
+        0.6611111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9240740736325582,
+        "std": 0.020848740279002163
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.925000011920929,
+        0.9027777910232544
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9361110925674438,
+        "std": 0.014433742964637562
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.9444444179534912,
+        0.9194444417953491
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.7824074029922485,
+        "std": 0.06439015516939144
+      },
+      "per_seed": [
+        0.7083333134651184,
+        0.824999988079071,
+        0.8138889074325562
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.935185174147288,
+        "std": 0.018907946805719354
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.949999988079071,
+        0.9138888716697693
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.9287036856015524,
+        "std": 0.0321950702992539
+      },
+      "per_seed": [
+        0.9444444179534912,
+        0.949999988079071,
+        0.8916666507720947
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.6870370308558146,
+        "std": 0.02796233230392082
+      },
+      "per_seed": [
+        0.7166666388511658,
+        0.6833333373069763,
+        0.6611111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.029629630967974663,
+        "std": 0.00892930679026071
+      },
+      "per_seed": [
+        0.01944444514811039,
+        0.03333333507180214,
+        0.03611111268401146
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9157407482465109,
+        "std": 0.0331398959766203
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.9305555820465088,
+        0.8777777552604675
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.9212962985038757,
+        "std": 0.025051393733182704
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.9194444417953491,
+        0.8972222208976746
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.7731481393178304,
+        "std": 0.06390903275506586
+      },
+      "per_seed": [
+        0.7083333134651184,
+        0.8361111283302307,
+        0.7749999761581421
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9351851940155029,
+        "std": 0.008929301865010864
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.9388889074325562,
+        0.925000011920929
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.026851852734883625,
+        "std": 0.006990587886890877
+      },
+      "per_seed": [
+        0.01944444514811039,
+        0.03333333507180214,
+        0.02777777798473835
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.2,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.6370370189348856,
+        "std": 0.036990717770414266
+      },
+      "per_seed": [
+        0.605555534362793,
+        0.6277777552604675,
+        0.6777777671813965
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.700000007947286,
+        "std": 0.31351995184068315
+      },
+      "per_seed": [
+        0.8583333492279053,
+        0.9027777910232544,
+        0.33888888359069824
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.8833333452542623,
+        "std": 0.032034905169682916
+      },
+      "per_seed": [
+        0.8805555701255798,
+        0.9166666865348816,
+        0.8527777791023254
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.8944444259007772,
+        "std": 0.030932014365269732
+      },
+      "per_seed": [
+        0.8999999761581421,
+        0.9222221970558167,
+        0.8611111044883728
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6962962746620178,
+        "std": 0.08061939020775113
+      },
+      "per_seed": [
+        0.6138888597488403,
+        0.699999988079071,
+        0.7749999761581421
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9379629691441854,
+        "std": 0.012525682546764526
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.949999988079071,
+        0.925000011920929
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.8527777791023254,
+        "std": 0.1421017137388772
+      },
+      "per_seed": [
+        0.9277777671813965,
+        0.9416666626930237,
+        0.6888889074325562
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "label_flip",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.700000007947286,
+        "std": 0.31351995184068315
+      },
+      "per_seed": [
+        0.8583333492279053,
+        0.9027777910232544,
+        0.33888888359069824
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.17685184876124063,
+        "std": 0.09449888934648674
+      },
+      "per_seed": [
+        0.21388888359069824,
+        0.24722221493721008,
+        0.0694444477558136
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9083333412806193,
+        "std": 0.015466009858970065
+      },
+      "per_seed": [
+        0.9055555462837219,
+        0.925000011920929,
+        0.894444465637207
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.5972222089767456,
+        "std": 0.1194444354190385
+      },
+      "per_seed": [
+        0.5611110925674438,
+        0.730555534362793,
+        0.5
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.7490740617116293,
+        "std": 0.11171132888347787
+      },
+      "per_seed": [
+        0.625,
+        0.8416666388511658,
+        0.7805555462837219
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9361111124356588,
+        "std": 0.02169513383365412
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.949999988079071,
+        0.9111111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.8537037173906962,
+        "std": 0.1428418888647049
+      },
+      "per_seed": [
+        0.9305555820465088,
+        0.9416666626930237,
+        0.6888889074325562
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "scaling",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.17685184876124063,
+        "std": 0.09449888934648674
+      },
+      "per_seed": [
+        0.21388888359069824,
+        0.24722221493721008,
+        0.0694444477558136
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.5777777830759684,
+        "std": 0.06460945311619812
+      },
+      "per_seed": [
+        0.5666666626930237,
+        0.6472222208976746,
+        0.519444465637207
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.9333333373069763,
+        "std": 0.014433742964637562
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.9416666626930237,
+        0.9166666865348816
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.8861111203829447,
+        "std": 0.024216100379940736
+      },
+      "per_seed": [
+        0.9027777910232544,
+        0.8972222208976746,
+        0.8583333492279053
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.7490740617116293,
+        "std": 0.11171132888347787
+      },
+      "per_seed": [
+        0.625,
+        0.8416666388511658,
+        0.7805555462837219
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9361111124356588,
+        "std": 0.02169513383365412
+      },
+      "per_seed": [
+        0.9472222328186035,
+        0.949999988079071,
+        0.9111111164093018
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.920370360215505,
+        "std": 0.0321950702992539
+      },
+      "per_seed": [
+        0.9416666626930237,
+        0.9361110925674438,
+        0.8833333253860474
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "random_noise",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.5777777830759684,
+        "std": 0.06460945311619812
+      },
+      "per_seed": [
+        0.5666666626930237,
+        0.6472222208976746,
+        0.519444465637207
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "fedavg",
+      "final_accuracy": {
+        "mean": 0.029629630657533806,
+        "std": 0.01849535639079924
+      },
+      "per_seed": [
+        0.03888889029622078,
+        0.0416666679084301,
+        0.008333333767950535
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "median",
+      "final_accuracy": {
+        "mean": 0.8833333452542623,
+        "std": 0.032034905169682916
+      },
+      "per_seed": [
+        0.8805555701255798,
+        0.9166666865348816,
+        0.8527777791023254
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "trimmed_mean",
+      "final_accuracy": {
+        "mean": 0.8944444259007772,
+        "std": 0.030932014365269732
+      },
+      "per_seed": [
+        0.8999999761581421,
+        0.9222221970558167,
+        0.8611111044883728
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "krum",
+      "final_accuracy": {
+        "mean": 0.6962962746620178,
+        "std": 0.08061939020775113
+      },
+      "per_seed": [
+        0.6138888597488403,
+        0.699999988079071,
+        0.7749999761581421
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "multi_krum",
+      "final_accuracy": {
+        "mean": 0.9379629691441854,
+        "std": 0.012525682546764526
+      },
+      "per_seed": [
+        0.9388889074325562,
+        0.949999988079071,
+        0.925000011920929
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "norm_clip",
+      "final_accuracy": {
+        "mean": 0.029629630657533806,
+        "std": 0.01849535639079924
+      },
+      "per_seed": [
+        0.03888889029622078,
+        0.0416666679084301,
+        0.008333333767950535
+      ]
+    },
+    {
+      "dataset": "digits",
+      "attack": "fake_samples",
+      "fraction": 0.3,
+      "rule": "bounded",
+      "final_accuracy": {
+        "mean": 0.2898148198922475,
+        "std": 0.1628340219832831
+      },
+      "per_seed": [
+        0.4000000059604645,
+        0.36666667461395264,
+        0.10277777910232544
+      ]
+    }
+  ],
+  "environment": {
+    "python": "3.13.5",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "packages": {
+      "q-edge": "0.2.0.dev0",
+      "numpy": "2.5.4",
+      "torch": "2.14.1",
+      "scikit-learn": "1.9.1",
+      "pennylane": "0.45.1",
+      "flwr": "1.40.0"
+    }
+  }
+}
