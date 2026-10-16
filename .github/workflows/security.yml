@@ -39,7 +39,9 @@ jobs:
       - run: python -m pip install --upgrade pip setuptools
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e ".[server,fl]"
-      - run: pip freeze --exclude-editable > requirements-audit.txt
+      # CPU wheels are versioned like torch==2.14.1+cpu, which is not on PyPI, so
+      # --strict would fail; audit the release they are built from instead.
+      - run: pip freeze --exclude-editable | sed -E 's/\+[A-Za-z0-9.]+$//' > requirements-audit.txt
       - run: >-
           pipx run pip-audit==2.10.1 --strict --no-deps --disable-pip
           -r requirements-audit.txt
