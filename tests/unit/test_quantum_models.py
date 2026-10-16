@@ -12,7 +12,12 @@ import torch
 from qedge.cli import main
 from qedge.fl.models import build_model, count_parameters, get_weights
 from qedge.fl.simulation import SimulationConfig, run_simulation
-from qedge.quantum.models import QuantumHeadConfig, build_head_model, head_config, matched_hidden
+from qedge.quantum.models import (
+    QuantumHeadConfig,
+    build_head_model,
+    head_config,
+    matched_head_shape,
+)
 from qedge.quantum.noise import NoiseConfig
 from qedge.quantum.zne import ZNEConfig
 
@@ -32,9 +37,14 @@ def test_classical_head_matches_the_vqc_parameter_count(qubits, layers):
     assert count_parameters(hybrid.encoder) == count_parameters(classical.encoder)
 
 
-def test_matched_hidden_is_at_least_one():
-    assert matched_hidden(4, 0) == 1
-    assert matched_hidden(4, 24) == 2
+def test_classical_head_is_never_narrower_than_the_qubit_count():
+    # 4 qubits, 2 layers: VQC 24; Linear(4, 4) has 20, a hidden width 4 has 40.
+    assert matched_head_shape(4, 24) is None
+    assert matched_head_shape(4, 36) == 4
+    assert matched_head_shape(4, 100) == 11
+    for n, target in ((2, 6), (4, 0), (6, 36), (8, 96)):
+        hidden = matched_head_shape(n, target)
+        assert hidden is None or hidden >= n
 
 
 @pytest.mark.parametrize("name", ["hybrid-vqc", "classical-head"])

@@ -4,9 +4,9 @@ Both models share the same encoder and readout and differ only in the head:
 
 - `HybridVQCClassifier`: features -> MLP encoder -> ``pi * tanh`` angles ->
   VQC (`qedge.quantum.circuits.vqc`) -> ``<Z_i>`` per qubit -> linear readout.
-- `ClassicalHeadClassifier`: the VQC is replaced by
-  ``Linear(n, h) -> tanh -> Linear(h, n) -> tanh`` with ``h`` chosen so the
-  head has about as many trainable parameters as the VQC.
+- `ClassicalHeadClassifier`: the VQC is replaced by ``Linear(n, n) -> tanh``
+  or ``Linear(n, h) -> tanh -> Linear(h, n) -> tanh`` with ``h >= n``,
+  whichever has a parameter count closest to the VQC's.
 
 The VQC runs through `qml.qnn.TorchLayer`. Without shots it is
 differentiated by backpropagation through the simulator, also on the
@@ -137,9 +137,22 @@ def build_vqc_layer(config: QuantumHeadConfig, *, seed: int | None = None) -> nn
     return layer
 
 
-def matched_hidden(n_qubits: int, target: int) -> int:
-    """Hidden width ``h >= 1`` whose head size ``h (2n + 1) + n`` is closest to ``target``."""
-    return max(1, round((target - n_qubits) / (2 * n_qubits + 1)))
+def matched_head_shape(n_qubits: int, target: int) -> int | None:
+    """Hidden width of the classical head closest to ``target`` parameters.
+
+    Candidates are one ``Linear(n, n)`` layer (``n^2 + n`` parameters,
+    returned as None) and two layers through a hidden width ``h >= n``
+    (``h (2n + 1) + n``). Widths below ``n`` are excluded so the classical
+    head is never a narrower bottleneck than the n expectation values of the
+    VQC. Ties go to the single layer.
+    """
+    n = n_qubits
+    best: tuple[int, int | None] = (abs(n * n + n - target), None)
+    hidden = max(n, round((target - n) / (2 * n + 1)))
+    for h in {n, hidden, hidden + 1}:
+        if h >= n:
+            best = min(best, (abs(h * (2 * n + 1) + n - target), h), key=lambda c: c[0])
+    return best[1]
 
 
 class _Classifier(nn.Module):
@@ -181,12 +194,16 @@ class HybridVQCClassifier(_Classifier):
 
 
 class ClassicalHeadClassifier(_Classifier):
-    """Same encoder and readout with a two-layer tanh MLP head of matched size."""
+    """Same encoder and readout with a tanh head of matched size (`matched_head_shape`)."""
 
     def __init__(self, n_features: int, n_classes: int, config: QuantumHeadConfig) -> None:
         n = config.n_qubits
-        hidden = matched_hidden(n, config.vqc_parameters)
-        head = nn.Sequential(nn.Linear(n, hidden), nn.Tanh(), nn.Linear(hidden, n), nn.Tanh())
+        hidden = matched_head_shape(n, config.vqc_parameters)
+        head: nn.Module
+        if hidden is None:
+            head = nn.Sequential(nn.Linear(n, n), nn.Tanh())
+        else:
+            head = nn.Sequential(nn.Linear(n, hidden), nn.Tanh(), nn.Linear(hidden, n), nn.Tanh())
         super().__init__(n_features, n_classes, config, head)
 
 
