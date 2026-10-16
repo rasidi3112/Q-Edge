@@ -13,9 +13,6 @@ from qedge.quantum.circuits import AnsatzType, VariationalQuantumCircuit, VQCCon
 from qedge.quantum.kernels import FeatureMapType, QKAConfig, QuantumKernelAlignment
 from qedge.quantum.zne import MeasurementErrorMitigation
 
-ALIASED = pytest.mark.xfail(strict=True, reason="some enum members fall back to another member")
-UNVALIDATED = pytest.mark.xfail(strict=True, reason="unknown option falls back to a default")
-
 
 def _assert_pairwise_distinct(outputs):
     members = list(outputs)
@@ -26,7 +23,6 @@ def _assert_pairwise_distinct(outputs):
             assert not same, f"{first.name} and {second.name} compute the same result"
 
 
-@ALIASED
 def test_every_ansatz_type_builds_a_distinct_circuit():
     features = np.array([0.1, 0.2, 0.3, 0.4])
     outputs = {
@@ -38,7 +34,6 @@ def test_every_ansatz_type_builds_a_distinct_circuit():
     _assert_pairwise_distinct(outputs)
 
 
-@ALIASED
 def test_every_feature_map_type_builds_a_distinct_kernel():
     x1, x2 = np.array([0.3, -0.7, 1.1]), np.array([-0.2, 0.9, 0.4])
     outputs = {
@@ -50,7 +45,6 @@ def test_every_feature_map_type_builds_a_distinct_kernel():
     _assert_pairwise_distinct(outputs)
 
 
-@ALIASED
 @pytest.mark.asyncio
 async def test_every_aggregation_strategy_has_its_own_rule():
     rng = np.random.default_rng(0)
@@ -70,13 +64,11 @@ async def test_every_aggregation_strategy_has_its_own_rule():
     _assert_pairwise_distinct(outputs)
 
 
-@UNVALIDATED
 def test_measurement_error_mitigation_rejects_unknown_method():
     with pytest.raises(ValueError, match="method"):
         MeasurementErrorMitigation(n_qubits=2, method="bogus")
 
 
-@UNVALIDATED
 def test_align_to_target_rejects_unknown_target_kernel():
     qka = QuantumKernelAlignment(QKAConfig(n_qubits=2, n_layers=1, max_iterations=1), seed=0)
     X = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
@@ -85,14 +77,12 @@ def test_align_to_target_rejects_unknown_target_kernel():
         qka.align_to_target(X, y, kernel_type="bogus")
 
 
-@UNVALIDATED
 def test_draw_rejects_unknown_style():
     vqc = VariationalQuantumCircuit(VQCConfig(n_qubits=2, n_layers=1), seed=0)
     with pytest.raises(ValueError, match="style"):
         vqc.draw(style="bogus")
 
 
-@UNVALIDATED
 def test_hardware_efficient_ansatz_sizes_parameters_from_rotation_gates():
     config = VQCConfig(
         n_qubits=3,

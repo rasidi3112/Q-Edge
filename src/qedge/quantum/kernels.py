@@ -17,16 +17,7 @@ class FeatureMapType(Enum):
     
     ZZ_FEATURE_MAP = "zz_feature_map"       # Diagonal + entanglement
     PAULI_FEATURE_MAP = "pauli_feature_map"  # Pauli rotations
-    IQP_FEATURE_MAP = "iqp_feature_map"      # Instantaneous Quantum Polynomial
-    AMPLITUDE_EMBEDDING = "amplitude"         # Amplitude encoding
     ANGLE_EMBEDDING = "angle"                 # Angle encoding
-
-class KernelType(Enum):
-    
-    
-    FIDELITY = "fidelity"        # Transition amplitude squared
-    PROJECTED = "projected"       # Projected quantum kernel
-    SWAP_TEST = "swap_test"       # SWAP test kernel
 
 @dataclass
 class QKAConfig:
@@ -35,7 +26,6 @@ class QKAConfig:
     n_qubits: int = 8
     n_layers: int = 2
     feature_map_type: FeatureMapType = FeatureMapType.ZZ_FEATURE_MAP
-    kernel_type: KernelType = KernelType.FIDELITY
     alignment_method: str = "L-BFGS-B"
     regularization: float = 0.01
     max_iterations: int = 100
@@ -55,12 +45,7 @@ class QuantumKernelAlignment:
         self._seed = seed
         self._rng = np.random.default_rng(seed)
         
-        # Create quantum device (needs 2x qubits for kernel evaluation)
-        self.device = qml.device(
-            device_name,
-            wires=config.n_qubits * 2 if config.kernel_type == KernelType.SWAP_TEST 
-            else config.n_qubits,
-        )
+        self.device = qml.device(device_name, wires=config.n_qubits)
         
         # Initialize trainable feature map parameters
         self._param_shape = self._get_param_shape()
@@ -89,7 +74,7 @@ class QuantumKernelAlignment:
             # Pauli feature map: 3 parameters per qubit per layer
             return (n_layers, n_qubits, 3)
         else:
-            # Default: single parameter per qubit per layer
+            # ANGLE_EMBEDDING: single parameter per qubit per layer
             return (n_layers, n_qubits)
     
     def _initialize_params(self) -> NDArray[np.float64]:
@@ -264,6 +249,11 @@ class QuantumKernelAlignment:
         kernel_type: str = "rbf",
     ) -> dict[str, Any]:
         
+        if kernel_type not in ("ideal", "rbf", "linear"):
+            raise ValueError(
+                f"Unknown kernel_type {kernel_type!r}; expected 'ideal', 'rbf' or 'linear'"
+            )
+        
         # Compute target kernel matrix
         if kernel_type == "ideal":
             # Ideal kernel: K[i,j] = 1 if y[i] == y[j], else 0
@@ -411,7 +401,6 @@ class QuantumKernelAlignment:
                 "n_qubits": self.config.n_qubits,
                 "n_layers": self.config.n_layers,
                 "feature_map_type": self.config.feature_map_type.value,
-                "kernel_type": self.config.kernel_type.value,
                 "regularization": self.config.regularization,
             },
             "feature_map_params": self.feature_map_params.tolist(),
@@ -425,7 +414,6 @@ class QuantumKernelAlignment:
             n_qubits=data["config"]["n_qubits"],
             n_layers=data["config"]["n_layers"],
             feature_map_type=FeatureMapType(data["config"]["feature_map_type"]),
-            kernel_type=KernelType(data["config"]["kernel_type"]),
             regularization=data["config"]["regularization"],
         )
         

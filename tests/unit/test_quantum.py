@@ -15,7 +15,6 @@ from qedge.quantum.kernels import (
     QuantumKernelAlignment,
     QKAConfig,
     FeatureMapType,
-    KernelType,
 )
 from qedge.quantum.zne import (
     ZeroNoiseExtrapolation,

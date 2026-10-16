@@ -25,9 +25,6 @@ class AnsatzType(Enum):
     
     HARDWARE_EFFICIENT = "hardware_efficient"
     STRONGLY_ENTANGLING = "strongly_entangling"
-    ALTERNATING_LAYER = "alternating_layer"
-    QNN_LAYER = "qnn_layer"
-    IQP_EMBEDDING = "iqp_embedding"
 
 @dataclass
 class VQCConfig:
@@ -39,7 +36,6 @@ class VQCConfig:
     entanglement: EntanglementPattern = EntanglementPattern.FULL
     rotation_gates: Sequence[str] = field(default_factory=lambda: ["RY", "RZ"])
     data_reuploading: bool = True
-    measurement_basis: str = "pauli_z"
     
     def __post_init__(self) -> None:
         
@@ -98,18 +94,11 @@ class VariationalQuantumCircuit:
         n_layers = self.config.n_layers
         
         if self.config.ansatz_type == AnsatzType.STRONGLY_ENTANGLING:
-            # StronglyEntanglingLayers uses 3 rotations per qubit per layer
+            # One Rot gate (3 angles) per qubit per layer
             return (n_layers, n_qubits, 3)
-        elif self.config.ansatz_type == AnsatzType.HARDWARE_EFFICIENT:
-            # Hardware efficient: 2 rotations per qubit per layer
-            return (n_layers, n_qubits, 2)
-        elif self.config.ansatz_type == AnsatzType.QNN_LAYER:
-            # QNN layer: Single rotation + entanglement
-            return (n_layers, n_qubits)
-        else:
-            # Default: rotations per layer
-            n_rotations = len(self.config.rotation_gates)
-            return (n_layers, n_qubits, n_rotations)
+        # HARDWARE_EFFICIENT: one angle per single-axis gate, three per Rot
+        n_angles = sum(3 if gate == "Rot" else 1 for gate in self.config.rotation_gates)
+        return (n_layers, n_qubits, n_angles)
     
     def _initialize_parameters(self) -> NDArray[np.float64]:
         
@@ -174,17 +163,20 @@ class VariationalQuantumCircuit:
         else:
             # Apply specified rotation gates
             for qubit in range(self.config.n_qubits):
-                for gate_idx, gate_name in enumerate(self.config.rotation_gates):
+                offset = 0
+                for gate_name in self.config.rotation_gates:
                     gate = getattr(qml, gate_name)
                     if gate_name == "Rot":
                         gate(
-                            layer_params[qubit, gate_idx * 3],
-                            layer_params[qubit, gate_idx * 3 + 1],
-                            layer_params[qubit, gate_idx * 3 + 2],
+                            layer_params[qubit, offset],
+                            layer_params[qubit, offset + 1],
+                            layer_params[qubit, offset + 2],
                             wires=qubit,
                         )
+                        offset += 3
                     else:
-                        gate(layer_params[qubit, gate_idx], wires=qubit)
+                        gate(layer_params[qubit, offset], wires=qubit)
+                        offset += 1
     
     def _apply_entanglement(self, layer_idx: int) -> None:
         
@@ -299,15 +291,16 @@ class VariationalQuantumCircuit:
         
         return gate_counts
     
-    def draw(self, style: str = "mpl") -> Any:
+    def draw(self, style: str = "text") -> Any:
         
         # Create a sample execution for drawing
         sample_features = np.zeros(self.config.n_qubits)
         
         if style == "text":
             return qml.draw(self._circuit)(self.params, sample_features)
-        else:
+        if style == "mpl":
             return qml.draw_mpl(self._circuit)(self.params, sample_features)
+        raise ValueError(f"Unknown draw style {style!r}; expected 'text' or 'mpl'")
     
     def to_dict(self) -> dict[str, Any]:
         

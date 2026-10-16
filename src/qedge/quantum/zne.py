@@ -17,7 +17,6 @@ class FoldingMethod(Enum):
     
     GLOBAL = "global"       # Fold entire circuit: U → U·U†·U
     LOCAL = "local"         # Fold individual gates: G → G·G†·G
-    RANDOM = "random"       # Randomly select gates to fold
 
 class ExtrapolationMethod(Enum):
     
@@ -38,8 +37,6 @@ class ZNEConfig:
     folding_method: FoldingMethod = FoldingMethod.GLOBAL
     extrapolation_method: ExtrapolationMethod = ExtrapolationMethod.RICHARDSON
     poly_degree: int = 2
-    n_shots_per_scale: int = 1024
-    random_seed: Optional[int] = None
     
     def __post_init__(self) -> None:
         
@@ -57,7 +54,6 @@ class ZeroNoiseExtrapolation:
     def __init__(self, config: ZNEConfig) -> None:
         
         self.config = config
-        self._rng = np.random.default_rng(config.random_seed)
         self.extrapolation_history: list[dict[str, Any]] = []
         
         logger.info(
@@ -167,14 +163,8 @@ class ZeroNoiseExtrapolation:
         # Apply folding
         if self.config.folding_method == FoldingMethod.GLOBAL:
             folded_tape = self.fold_circuit_global(tape, scale_factor)
-        elif self.config.folding_method == FoldingMethod.LOCAL:
-            folded_tape = self.fold_circuit_local(tape, scale_factor)
         else:
-            # Random folding
-            if self._rng.random() > 0.5:
-                folded_tape = self.fold_circuit_global(tape, scale_factor)
-            else:
-                folded_tape = self.fold_circuit_local(tape, scale_factor)
+            folded_tape = self.fold_circuit_local(tape, scale_factor)
         
         # Execute folded circuit
         results = device.execute(folded_tape)
@@ -379,12 +369,14 @@ class MeasurementErrorMitigation:
     def __init__(
         self,
         n_qubits: int,
-        n_shots: int = 8192,
         method: str = "inverse",
     ) -> None:
         
+        if method not in ("inverse", "least_squares", "iterative"):
+            raise ValueError(
+                f"Unknown method {method!r}; expected 'inverse', 'least_squares' or 'iterative'"
+            )
         self.n_qubits = n_qubits
-        self.n_shots = n_shots
         self.method = method
         
         self.calibration_matrix: Optional[NDArray[np.float64]] = None
@@ -448,7 +440,7 @@ class MeasurementErrorMitigation:
             )
             mitigated = result.x
         else:
-            # Iterative method
+            # method == "iterative"
             mitigated = measured_probs.copy()
             for _ in range(10):
                 correction = self.inverse_matrix @ (measured_probs - self.calibration_matrix @ mitigated)

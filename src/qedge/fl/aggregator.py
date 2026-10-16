@@ -21,9 +21,6 @@ class AggregationStrategy(Enum):
     FEDAVG = "fedavg"           # Weighted average by sample count
     FEDPROX = "fedprox"         # FedAvg with proximal regularization
     FEDOPT = "fedopt"           # Server-side optimization (FedAdam, FedYogi)
-    SCAFFOLD = "scaffold"       # Variance reduction
-    FEDBN = "fedbn"             # Batch normalization handling
-    QUANTUM = "quantum"         # Quantum-enhanced aggregation
 
 @dataclass
 class LocalModelUpdate:
@@ -59,7 +56,6 @@ class QuantumAggregatorConfig:
     zne_scale_factors: Sequence[float] = field(
         default_factory=lambda: [1.0, 1.5, 2.0, 2.5]
     )
-    weight_compression_ratio: float = 0.1  # Encode 10% of weights quantumly
     quantum_learning_rate: float = 0.01
     classical_weight: float = 0.7  # 70% classical, 30% quantum
 
@@ -120,13 +116,11 @@ class QuantumGlobalAggregator:
         
         if strategy == AggregationStrategy.FEDAVG:
             return self._fedavg(updates)
-        elif strategy == AggregationStrategy.FEDPROX:
+        if strategy == AggregationStrategy.FEDPROX:
             return self._fedprox(updates)
-        elif strategy == AggregationStrategy.FEDOPT:
+        if strategy == AggregationStrategy.FEDOPT:
             return self._fedopt(updates)
-        else:
-            # Default to FedAvg
-            return self._fedavg(updates)
+        raise ValueError(f"Unsupported aggregation strategy: {strategy}")
     
     def _fedavg(
         self,
