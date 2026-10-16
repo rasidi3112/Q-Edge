@@ -21,18 +21,18 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
-from src.backend.security import (
+from qedge.server.auth import (
     PQCAuthMiddleware,
     AzureKeyVaultManager,
     verify_jwt_token,
     create_jwt_token,
 )
-from src.backend.celery_app import (
+from qedge.server.worker import (
     celery_app,
     submit_quantum_aggregation,
     get_task_status,
 )
-from src.quantum.aggregator import (
+from qedge.fl.aggregator import (
     QuantumGlobalAggregator,
     QuantumAggregatorConfig,
     LocalModelUpdate,
@@ -511,7 +511,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
     import uvicorn
     
     uvicorn.run(
-        "src.backend.main:app",
+        "qedge.server.app:app",
         host=host,
         port=port,
         reload=os.getenv("DEBUG_MODE", "false").lower() == "true",

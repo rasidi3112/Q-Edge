@@ -56,7 +56,7 @@ def print_status(message, status="info"):
 def demo_quantum_circuits():
     print_section("🔮 Demo 1: Variational Quantum Circuits (VQC)")
     
-    from src.quantum.circuits import VariationalQuantumCircuit, VQCConfig, EntanglementPattern
+    from qedge.quantum.circuits import VariationalQuantumCircuit, VQCConfig, EntanglementPattern
     
     print_status("Creating VQC with 8 qubits, 4 layers...", "quantum")
     
@@ -96,7 +96,7 @@ def demo_quantum_circuits():
 def demo_quantum_kernels():
     print_section("🎯 Demo 2: Quantum Kernel Alignment (QKA)")
     
-    from src.quantum.kernels import QuantumKernelAlignment, QKAConfig, FeatureMapType
+    from qedge.quantum.kernels import QuantumKernelAlignment, QKAConfig, FeatureMapType
     
     print_status("Initializing QKA with ZZ feature map...", "quantum")
     
@@ -156,7 +156,7 @@ def demo_quantum_kernels():
 def demo_error_mitigation():
     print_section("🛡️ Demo 3: Zero-Noise Extrapolation (ZNE)")
     
-    from src.quantum.error_mitigation import ZeroNoiseExtrapolation, ZNEConfig, ExtrapolationMethod
+    from qedge.quantum.zne import ZeroNoiseExtrapolation, ZNEConfig, ExtrapolationMethod
     
     print_status("Simulating NISQ noise and extrapolation...", "quantum")
     
@@ -194,7 +194,7 @@ def demo_error_mitigation():
 async def demo_quantum_aggregation():
     print_section("🌐 Demo 4: Federated Learning with Quantum Aggregation")
     
-    from src.quantum.aggregator import (
+    from qedge.fl.aggregator import (
         QuantumGlobalAggregator,
         QuantumAggregatorConfig,
         LocalModelUpdate,

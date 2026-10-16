@@ -2,11 +2,6 @@
 
 import pytest
 import asyncio
-import os
-import sys
-
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -36,7 +31,7 @@ def random_weights():
 def sample_updates():
     
     import numpy as np
-    from src.quantum.aggregator import LocalModelUpdate
+    from qedge.fl.aggregator import LocalModelUpdate
     
     np.random.seed(42)
     return [

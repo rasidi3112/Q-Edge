@@ -129,11 +129,11 @@ Changelog = "https://github.com/qedge-ai/q-edge/blob/main/CHANGELOG.md"
 
 [project.scripts]
 qedge = "src.cli:main"
-qedge-api = "src.backend.main:run_server"
+qedge-api = "qedge.server.app:run_server"
 qedge-worker = "src.quantum.worker:run_worker"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/qedge"]
 
 [tool.ruff]
 target-version = "py310"
@@ -191,11 +191,11 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning"
 ]
-addopts = "-v --tb=short --cov=src --cov-report=term-missing --cov-report=xml"
+addopts = "-v --tb=short --cov=qedge --cov-report=term-missing --cov-report=xml"
 
 [tool.coverage.run]
 branch = true
-source = ["src"]
+source = ["qedge"]
 omit = ["*/tests/*", "*/__pycache__/*"]
 
 [tool.coverage.report]

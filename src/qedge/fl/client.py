@@ -42,7 +42,7 @@ except ImportError:
     TORCH_AVAILABLE = False
     logging.warning("PyTorch not installed. Install with: pip install torch")
 
-from src.mobile.pqc_transport import PQCTransportLayer
+from qedge.crypto.transport import PQCTransportLayer
 
 logger = logging.getLogger(__name__)
 

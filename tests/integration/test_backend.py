@@ -6,7 +6,7 @@ from unittest.mock import patch, AsyncMock
 import numpy as np
 
 # Import the app
-from src.backend.main import app
+from qedge.server.app import app
 
 @pytest.fixture
 def client():
@@ -16,7 +16,7 @@ def client():
 @pytest.fixture
 def auth_headers():
     
-    from src.backend.security import create_jwt_token
+    from qedge.server.auth import create_jwt_token
     
     token = create_jwt_token(
         client_id="test_client",
@@ -183,7 +183,7 @@ class TestQuantumEndpoints:
             "shots": 1024,
         }
         
-        with patch("src.backend.main.submit_quantum_aggregation") as mock_task:
+        with patch("qedge.server.app.submit_quantum_aggregation") as mock_task:
             mock_task.delay.return_value.id = "test-job-id"
             
             response = client.post(
@@ -234,7 +234,7 @@ class TestSecurity:
     
     def test_jwt_token_creation(self):
         
-        from src.backend.security import create_jwt_token
+        from qedge.server.auth import create_jwt_token
         
         token = create_jwt_token(
             client_id="test",
@@ -246,7 +246,7 @@ class TestSecurity:
     
     def test_jwt_token_verification(self):
         
-        from src.backend.security import create_jwt_token, verify_jwt_token
+        from qedge.server.auth import create_jwt_token, verify_jwt_token
         
         token = create_jwt_token(
             client_id="test_client",
@@ -260,7 +260,7 @@ class TestSecurity:
     
     def test_pqc_provider_keypair_generation(self):
         
-        from src.backend.security import PQCProvider, PQCAlgorithm
+        from qedge.server.auth import PQCProvider, PQCAlgorithm
         
         provider = PQCProvider(use_simulation=True)
         keypair = provider.generate_keypair(PQCAlgorithm.KYBER_1024)
@@ -271,7 +271,7 @@ class TestSecurity:
     
     def test_pqc_encapsulation(self):
         
-        from src.backend.security import PQCProvider, PQCAlgorithm
+        from qedge.server.auth import PQCProvider, PQCAlgorithm
         
         provider = PQCProvider(use_simulation=True)
         keypair = provider.generate_keypair(PQCAlgorithm.KYBER_1024)
@@ -287,7 +287,7 @@ class TestSecurity:
     
     def test_pqc_signing(self):
         
-        from src.backend.security import PQCProvider, PQCAlgorithm
+        from qedge.server.auth import PQCProvider, PQCAlgorithm
         
         provider = PQCProvider(use_simulation=True)
         keypair = provider.generate_keypair(PQCAlgorithm.DILITHIUM_5)

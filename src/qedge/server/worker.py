@@ -55,13 +55,13 @@ celery_app.conf.update(
     
     # Task routing
     task_routes={
-        "src.backend.celery_app.submit_quantum_aggregation": {
+        "qedge.server.worker.submit_quantum_aggregation": {
             "queue": "quantum"
         },
-        "src.backend.celery_app.execute_quantum_circuit": {
+        "qedge.server.worker.execute_quantum_circuit": {
             "queue": "quantum"
         },
-        "src.backend.celery_app.process_federated_update": {
+        "qedge.server.worker.process_federated_update": {
             "queue": "federated"
         },
     },
@@ -69,11 +69,11 @@ celery_app.conf.update(
     # Beat scheduler for periodic tasks
     beat_schedule={
         "cleanup-expired-jobs": {
-            "task": "src.backend.celery_app.cleanup_expired_jobs",
+            "task": "qedge.server.worker.cleanup_expired_jobs",
             "schedule": 3600.0,  # Every hour
         },
         "sync-quantum-hardware-status": {
-            "task": "src.backend.celery_app.sync_hardware_status",
+            "task": "qedge.server.worker.sync_hardware_status",
             "schedule": 300.0,  # Every 5 minutes
         },
     },
@@ -121,7 +121,7 @@ def submit_quantum_aggregation(
     
     try:
         # Import here to avoid circular imports
-        from src.quantum.aggregator import (
+        from qedge.fl.aggregator import (
             QuantumGlobalAggregator,
             QuantumAggregatorConfig,
             LocalModelUpdate,
@@ -213,7 +213,7 @@ def execute_quantum_circuit(
     start_time = time.time()
     
     try:
-        from src.quantum.circuits import (
+        from qedge.quantum.circuits import (
             VariationalQuantumCircuit,
             VQCConfig,
         )

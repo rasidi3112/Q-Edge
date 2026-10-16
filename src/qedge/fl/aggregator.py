@@ -9,10 +9,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 from numpy.typing import NDArray
 
-from src.quantum.circuits import VQCConfig, VariationalQuantumCircuit
-from src.quantum.kernels import QKAConfig, QuantumKernelAlignment
-from src.quantum.error_mitigation import ZNEConfig, ZeroNoiseExtrapolation
-from src.quantum.azure_connector import (
+from qedge.quantum.circuits import VQCConfig, VariationalQuantumCircuit
+from qedge.quantum.kernels import QKAConfig, QuantumKernelAlignment
+from qedge.quantum.zne import ZNEConfig, ZeroNoiseExtrapolation
+from qedge.quantum.azure_connector import (
     AzureQuantumConfig,
     AzureQuantumConnector,
     QuantumProvider,
