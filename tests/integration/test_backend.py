@@ -5,13 +5,14 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 import numpy as np
 
-# Import the app
-from qedge.server.app import app
+from qedge.server.app import create_app
+from qedge.server.settings import Settings
 
 @pytest.fixture
 def client():
     
-    return TestClient(app)
+    with TestClient(create_app(Settings(n_qubits=4, vqc_layers=2))) as test_client:
+        yield test_client
 
 @pytest.fixture
 def auth_headers():
@@ -127,7 +128,6 @@ class TestFederatedLearningEndpoints:
         data = response.json()
         assert data["status"] == "accepted"
     
-    @pytest.mark.xfail(strict=True, reason="I5: TestClient without a context manager skips the lifespan")
     def test_get_global_model_not_found(self, client, auth_headers):
         
         # Register client first
@@ -144,7 +144,6 @@ class TestFederatedLearningEndpoints:
         # Should return 404 when no model exists
         assert response.status_code == 404
     
-    @pytest.mark.xfail(strict=True, reason="I5: TestClient without a context manager skips the lifespan")
     def test_fl_metrics(self, client):
         
         response = client.get("/fl/metrics")
@@ -213,7 +212,6 @@ class TestSecurityMiddleware:
         
         assert "X-Process-Time" in response.headers
     
-    @pytest.mark.xfail(strict=True, reason="I5: TestClient without a context manager skips the lifespan")
     def test_pqc_protected_header(self, client, auth_headers):
         
         # Register client

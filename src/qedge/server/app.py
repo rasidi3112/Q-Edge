@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 from fastapi import (
+    APIRouter,
     Depends,
     FastAPI,
     HTTPException,
@@ -21,6 +23,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
+from qedge import __version__
 from qedge.server.auth import (
     PQCAuthMiddleware,
     verify_jwt_token,
@@ -36,12 +39,8 @@ from qedge.fl.aggregator import (
     QuantumAggregatorConfig,
     LocalModelUpdate,
 )
+from qedge.server.settings import Settings
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 # Pydantic models for API
@@ -105,100 +104,34 @@ class HealthCheckResponse(BaseModel):
     timestamp: str
     services: Dict[str, str]
 
-# Global state
-quantum_aggregator: Optional[QuantumGlobalAggregator] = None
-registered_clients: Dict[str, Dict[str, Any]] = {}
-current_round_updates: List[LocalModelUpdate] = []
+@dataclass
+class ServerState:
+    
+    
+    settings: Settings
+    aggregator: QuantumGlobalAggregator
+    registered_clients: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    current_round_updates: List[LocalModelUpdate] = field(default_factory=list)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def get_state(request: Request) -> ServerState:
     
-    global quantum_aggregator
-    
-    logger.info("Starting Q-Edge Backend...")
-    
-    # Initialize Quantum Aggregator
-    config = QuantumAggregatorConfig(
-        n_qubits=int(os.getenv("VQC_NUM_QUBITS", "8")),
-        vqc_layers=int(os.getenv("VQC_NUM_LAYERS", "4")),
-    )
-    quantum_aggregator = QuantumGlobalAggregator(config)
-    
-    logger.info("Q-Edge Backend started successfully")
-    
-    yield
-    
-    logger.info("Shutting down Q-Edge Backend...")
+    state = getattr(request.app.state, "qedge", None)
+    if not isinstance(state, ServerState):
+        raise RuntimeError("Server state is missing; the application lifespan has not run")
+    return state
 
-# Create FastAPI application
-app = FastAPI(
-    title="Q-Edge API",
-    description=(
-        "Federated Hybrid Quantum-Neural Network Platform API\n\n"
-        "This API provides endpoints for:\n"
-        "- Mobile client registration with PQC authentication\n"
-        "- Federated learning weight submission and aggregation\n"
-        "- Quantum job submission and monitoring\n"
-        "- Health and metrics monitoring"
-    ),
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-    lifespan=lifespan,
-)
+router = APIRouter()
 
 # Security
 security = HTTPBearer()
 
-# CORS configuration
-cors_origins = os.getenv("CORS_ORIGINS", '["http://localhost:3000"]')
-import json
-origins = json.loads(cors_origins) if cors_origins else ["*"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add PQC authentication middleware
-app.add_middleware(PQCAuthMiddleware)
-
-# Rate limiting middleware
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # In production, use Redis for distributed rate limiting
-    rate_limit = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
-    
-    response = await call_next(request)
-    response.headers["X-RateLimit-Limit"] = str(rate_limit)
-    response.headers["X-RateLimit-Remaining"] = str(rate_limit - 1)
-    
-    return response
-
-# Request timing middleware
-@app.middleware("http")
-async def timing_middleware(request: Request, call_next):
-    
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = f"{process_time:.4f}"
-    return response
-
 # Health endpoints
-@app.get("/health", response_model=HealthCheckResponse, tags=["Health"])
-async def health_check() -> HealthCheckResponse:
+@router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
+async def health_check(state: ServerState = Depends(get_state)) -> HealthCheckResponse:
     
     services = {
         "api": "healthy",
-        "quantum_aggregator": "healthy" if quantum_aggregator else "unavailable",
+        "quantum_aggregator": "healthy" if state.aggregator else "unavailable",
         "celery": "healthy",  # Would check celery.control.ping() in production
     }
     
@@ -208,28 +141,31 @@ async def health_check() -> HealthCheckResponse:
     
     return HealthCheckResponse(
         status=overall_status,
-        version="1.0.0",
+        version=__version__,
         timestamp=datetime.utcnow().isoformat(),
         services=services,
     )
 
-@app.get("/", tags=["Health"])
+@router.get("/", tags=["Health"])
 async def root():
     
     return {
         "name": "Q-Edge API",
-        "version": "1.0.0",
+        "version": __version__,
         "description": "Federated Hybrid Quantum-Neural Network Platform",
         "documentation": "/docs",
     }
 
 # Authentication endpoints
-@app.post(
+@router.post(
     "/auth/register",
     response_model=ClientAuthResponse,
     tags=["Authentication"],
 )
-async def register_client(registration: ClientRegistration) -> ClientAuthResponse:
+async def register_client(
+    registration: ClientRegistration,
+    state: ServerState = Depends(get_state),
+) -> ClientAuthResponse:
     
     logger.info(f"Registering client: {registration.client_id}")
     
@@ -247,7 +183,7 @@ async def register_client(registration: ClientRegistration) -> ClientAuthRespons
     session_id = f"session_{registration.client_id}_{int(time.time())}"
     
     # Store registered client
-    registered_clients[registration.client_id] = {
+    state.registered_clients[registration.client_id] = {
         "public_key": registration.public_key,
         "device_info": registration.device_info,
         "registered_at": datetime.utcnow().isoformat(),
@@ -273,6 +209,7 @@ async def register_client(registration: ClientRegistration) -> ClientAuthRespons
 
 async def get_current_client(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    state: ServerState = Depends(get_state),
 ) -> Dict[str, Any]:
     
     token = credentials.credentials
@@ -281,7 +218,7 @@ async def get_current_client(
         payload = verify_jwt_token(token)
         client_id = payload.get("client_id")
         
-        if client_id not in registered_clients:
+        if client_id not in state.registered_clients:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Client not registered",
@@ -290,7 +227,7 @@ async def get_current_client(
         return {
             "client_id": client_id,
             "session_id": payload.get("session_id"),
-            **registered_clients[client_id],
+            **state.registered_clients[client_id],
         }
         
     except Exception as e:
@@ -300,7 +237,7 @@ async def get_current_client(
         )
 
 # Federated Learning endpoints
-@app.post(
+@router.post(
     "/fl/submit-weights",
     response_model=Dict[str, Any],
     tags=["Federated Learning"],
@@ -308,6 +245,7 @@ async def get_current_client(
 async def submit_weights(
     submission: ModelWeightsSubmission,
     client: Dict[str, Any] = Depends(get_current_client),
+    state: ServerState = Depends(get_state),
 ) -> Dict[str, Any]:
     
     if submission.client_id != client["client_id"]:
@@ -329,25 +267,26 @@ async def submit_weights(
         local_loss=submission.local_loss,
     )
     
-    current_round_updates.append(update)
+    state.current_round_updates.append(update)
     
     return {
         "status": "accepted",
         "round_number": submission.round_number,
-        "pending_updates": len(current_round_updates),
+        "pending_updates": len(state.current_round_updates),
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-@app.post(
+@router.post(
     "/fl/trigger-aggregation",
     response_model=AggregationResult,
     tags=["Federated Learning"],
 )
 async def trigger_aggregation(
     client: Dict[str, Any] = Depends(get_current_client),
+    state: ServerState = Depends(get_state),
 ) -> AggregationResult:
     
-    global current_round_updates
+    current_round_updates = state.current_round_updates
     
     if len(current_round_updates) == 0:
         raise HTTPException(
@@ -355,7 +294,7 @@ async def trigger_aggregation(
             detail="No weights submitted for aggregation",
         )
     
-    min_clients = int(os.getenv("FL_MIN_CLIENTS", "1"))
+    min_clients = state.settings.fl_min_clients
     if len(current_round_updates) < min_clients:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -367,10 +306,10 @@ async def trigger_aggregation(
     )
     
     # Perform quantum-enhanced aggregation
-    global_state = await quantum_aggregator.aggregate(current_round_updates)
+    global_state = await state.aggregator.aggregate(current_round_updates)
     
     # Clear current round updates
-    current_round_updates = []
+    state.current_round_updates = []
     
     return AggregationResult(
         round_number=global_state.round_number,
@@ -384,22 +323,23 @@ async def trigger_aggregation(
         timestamp=datetime.utcnow().isoformat(),
     )
 
-@app.get(
+@router.get(
     "/fl/global-model",
     response_model=Dict[str, Any],
     tags=["Federated Learning"],
 )
 async def get_global_model(
     client: Dict[str, Any] = Depends(get_current_client),
+    state: ServerState = Depends(get_state),
 ) -> Dict[str, Any]:
     
-    if quantum_aggregator.global_state is None:
+    if state.aggregator.global_state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No global model available yet",
         )
     
-    global_state = quantum_aggregator.global_state
+    global_state = state.aggregator.global_state
     
     return {
         "round_number": global_state.round_number,
@@ -408,17 +348,17 @@ async def get_global_model(
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-@app.get(
+@router.get(
     "/fl/metrics",
     response_model=Dict[str, Any],
     tags=["Federated Learning"],
 )
-async def get_fl_metrics() -> Dict[str, Any]:
+async def get_fl_metrics(state: ServerState = Depends(get_state)) -> Dict[str, Any]:
     
-    return quantum_aggregator.get_aggregation_metrics()
+    return state.aggregator.get_aggregation_metrics()
 
 # Quantum job endpoints
-@app.post(
+@router.post(
     "/quantum/submit-job",
     response_model=QuantumJobStatus,
     tags=["Quantum Computing"],
@@ -443,7 +383,7 @@ async def submit_quantum_job(
         progress=0.0,
     )
 
-@app.get(
+@router.get(
     "/quantum/job/{job_id}",
     response_model=QuantumJobStatus,
     tags=["Quantum Computing"],
@@ -464,37 +404,116 @@ async def get_quantum_job_status(
     )
 
 # Admin endpoints (protected)
-@app.get("/admin/clients", tags=["Admin"])
+@router.get("/admin/clients", tags=["Admin"])
 async def list_clients(
     client: Dict[str, Any] = Depends(get_current_client),
+    state: ServerState = Depends(get_state),
 ) -> Dict[str, Any]:
     
     return {
-        "total_clients": len(registered_clients),
-        "clients": list(registered_clients.keys()),
+        "total_clients": len(state.registered_clients),
+        "clients": list(state.registered_clients.keys()),
     }
 
-@app.get("/admin/aggregator-state", tags=["Admin"])
+@router.get("/admin/aggregator-state", tags=["Admin"])
 async def get_aggregator_state(
     client: Dict[str, Any] = Depends(get_current_client),
+    state: ServerState = Depends(get_state),
 ) -> Dict[str, Any]:
     
+    aggregator = state.aggregator
     return {
-        "current_round": quantum_aggregator._current_round,
-        "vqc_params_count": quantum_aggregator.vqc.num_params,
-        "has_global_state": quantum_aggregator.global_state is not None,
-        "history_length": len(quantum_aggregator.round_history),
+        "current_round": aggregator._current_round,
+        "vqc_params_count": aggregator.vqc.num_params,
+        "has_global_state": aggregator.global_state is not None,
+        "history_length": len(aggregator.round_history),
     }
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    
+    settings = Settings.from_env() if settings is None else settings
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        logger.info("Starting Q-Edge Backend...")
+        config = QuantumAggregatorConfig(
+            n_qubits=settings.n_qubits,
+            vqc_layers=settings.vqc_layers,
+        )
+        app.state.qedge = ServerState(
+            settings=settings,
+            aggregator=QuantumGlobalAggregator(config),
+        )
+        logger.info("Q-Edge Backend started successfully")
+        yield
+        logger.info("Shutting down Q-Edge Backend...")
+
+    app = FastAPI(
+        title="Q-Edge API",
+        description=(
+            "Federated Hybrid Quantum-Neural Network Platform API\n\n"
+            "This API provides endpoints for:\n"
+            "- Mobile client registration with PQC authentication\n"
+            "- Federated learning weight submission and aggregation\n"
+            "- Quantum job submission and monitoring\n"
+            "- Health and metrics monitoring"
+        ),
+        version=__version__,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Add PQC authentication middleware
+    app.add_middleware(PQCAuthMiddleware)
+
+    # Rate limiting middleware
+    @app.middleware("http")
+    async def rate_limit_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
+        response.headers["X-RateLimit-Remaining"] = str(settings.rate_limit_requests - 1)
+        return response
+
+    # Request timing middleware
+    @app.middleware("http")
+    async def timing_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        response.headers["X-Process-Time"] = f"{process_time:.4f}"
+        return response
+
+    app.include_router(router)
+    return app
 
 def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
     
     import uvicorn
     
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     uvicorn.run(
-        "qedge.server.app:app",
+        "qedge.server.app:create_app",
+        factory=True,
         host=host,
         port=port,
-        reload=os.getenv("DEBUG_MODE", "false").lower() == "true",
+        reload=Settings.from_env().debug,
         workers=1,
     )
 
