@@ -45,6 +45,41 @@ jobs:
       - run: pip install -e ".[dev,server,pqc-pure]"
       - run: pytest -m "not slow" --cov=qedge --cov-report=term-missing
 
+  test-liboqs:
+    name: Tests with liboqs ${{ matrix.liboqs }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        liboqs: ["0.16.0"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - id: cache-liboqs
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/_oqs
+          key: liboqs-${{ matrix.liboqs }}-${{ runner.os }}-${{ runner.arch }}
+      - name: Build liboqs into ~/_oqs
+        if: steps.cache-liboqs.outputs.cache-hit != 'true'
+        env:
+          LIBOQS_VERSION: ${{ matrix.liboqs }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
+          git clone --depth 1 --branch "$LIBOQS_VERSION" https://github.com/open-quantum-safe/liboqs "$RUNNER_TEMP/liboqs"
+          cmake -S "$RUNNER_TEMP/liboqs" -B "$RUNNER_TEMP/liboqs/build" -GNinja \
+            -DBUILD_SHARED_LIBS=ON -DOQS_BUILD_ONLY_LIB=ON -DOQS_DIST_BUILD=ON -DOQS_USE_OPENSSL=OFF \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/_oqs" -DCMAKE_INSTALL_LIBDIR=lib
+          cmake --build "$RUNNER_TEMP/liboqs/build" --parallel
+          cmake --build "$RUNNER_TEMP/liboqs/build" --target install
+      - run: pip install -e ".[dev,server,pqc,pqc-pure]"
+      # Fails instead of letting every liboqs test skip if the backend is missing.
+      - run: python -c "from qedge.crypto.backends import available_backends as a; assert 'liboqs' in a(), a()"
+      - run: pytest -m "not slow"
+
   docker:
     name: Docker build (${{ matrix.target }})
     runs-on: ubuntu-latest

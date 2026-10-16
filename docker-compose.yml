@@ -1,5 +1,7 @@
 # Local stack: API, Celery worker, and Redis as broker and result backend.
-# JWT_SECRET_KEY and REDIS_PASSWORD must be set (see .env.example).
+# JWT_SECRET_KEY and REDIS_PASSWORD must be set (see .env.example). The API
+# refuses to start until server keys exist in the server_keys volume:
+#   docker compose run --rm api qedge keys init --dir /keys
 #   docker compose up --build
 
 x-celery-env: &celery-env
@@ -16,6 +18,8 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - server_keys:/keys
     depends_on:
       redis:
         condition: service_healthy
@@ -45,3 +49,4 @@ services:
 
 volumes:
   redis_data:
+  server_keys:
