@@ -44,7 +44,7 @@ def test_client_tokens_cannot_use_admin_endpoints(client, headers):
     assert client.post("/admin/clients", json={}, headers=headers).status_code == 403
 
 
-PUBLIC_ROUTES = {"/", "/health", "/crypto/keys", "/auth/challenge", "/auth/token"}
+PUBLIC_ROUTES = {"/", "/health", "/metrics", "/crypto/keys", "/auth/challenge", "/auth/token"}
 DOC_ROUTES = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 
 

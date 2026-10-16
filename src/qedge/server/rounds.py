@@ -77,6 +77,8 @@ class RoundInfo:
     submissions: int
     model_sha256: str | None
     error: str | None
+    created_at: float
+    closed_at: float | None
 
     def to_json(self) -> dict[str, Any]:
         """JSON-compatible dict for API responses and events."""
@@ -103,6 +105,7 @@ class RoundService:
         clock: Source of the current Unix time in seconds.
         on_event: Called with ``(name, round_info)`` after each state change
             or accepted update; used for metrics.
+        on_aggregated: Called with the wall time of each aggregation in seconds.
     """
 
     def __init__(
@@ -113,12 +116,14 @@ class RoundService:
         max_samples: int,
         clock: Callable[[], float] = time.time,
         on_event: Callable[[str, RoundInfo], None] | None = None,
+        on_aggregated: Callable[[float], None] | None = None,
     ) -> None:
         self._db = db
         self._blobs = blobs
         self._max_samples = max_samples
         self._clock = clock
         self._on_event = on_event or (lambda name, info: None)
+        self._on_aggregated = on_aggregated or (lambda seconds: None)
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qedge-aggregate")
         self._pending: list[Future[None]] = []
@@ -178,6 +183,8 @@ class RoundService:
                 submissions=int(count or 0),
                 model_sha256=row.model_sha256,
                 error=row.error,
+                created_at=row.created_at,
+                closed_at=row.closed_at,
             )
 
     def all(self) -> list[RoundInfo]:
@@ -335,5 +342,7 @@ class RoundService:
             round_row.error, round_row.closed_at = error, self._clock()
             session.commit()
         info = self.info(round_id)
-        logger.info("Round %s %s after %.3f s", round_id, state, self._clock() - started)
+        elapsed = self._clock() - started
+        logger.info("Round %s %s after %.3f s of aggregation", round_id, state, elapsed)
+        self._on_aggregated(elapsed)
         self._on_event(state, info)

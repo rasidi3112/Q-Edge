@@ -25,6 +25,7 @@ from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from prometheus_client import CONTENT_TYPE_LATEST
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -54,9 +55,11 @@ from qedge.server.auth import (
 )
 from qedge.server.channels import SessionStore
 from qedge.server.db import BlobStore, Client, Database
+from qedge.server.metrics import Metrics
 from qedge.server.rounds import (
     DuplicateSubmissionError,
     InvalidSubmissionError,
+    RoundInfo,
     RoundNotFoundError,
     RoundNotOpenError,
     RoundService,
@@ -188,6 +191,7 @@ class ServerState:
     db: Database
     rounds: RoundService
     sessions: SessionStore
+    metrics: Metrics
 
 
 @dataclass(frozen=True)
@@ -226,20 +230,24 @@ def _authenticate(
     credentials: HTTPAuthorizationCredentials | None, state: ServerState, *scopes: str
 ) -> Principal:
     if credentials is None:
+        state.metrics.auth_failure("missing_token")
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "Missing bearer token", {"WWW-Authenticate": "Bearer"}
         )
     try:
         claims = state.tokens.verify(credentials.credentials)
     except TokenError as exc:
+        state.metrics.auth_failure("invalid_token")
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "Invalid token", {"WWW-Authenticate": "Bearer"}
         ) from exc
     with state.db.session() as session:
         client = session.get(Client, claims.subject)
     if client is None or client.scope != claims.scope:
+        state.metrics.auth_failure("not_enrolled")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Client is no longer enrolled")
     if claims.scope not in scopes:
+        state.metrics.auth_failure("forbidden_scope")
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requires scope {' or '.join(scopes)}")
     return Principal(claims.subject, claims.scope)
 
@@ -304,6 +312,12 @@ def get_server_keys(state: ServerState = Depends(get_state)) -> ServerKeysRespon
     )
 
 
+@router.get("/metrics", tags=["Health"], response_class=Response)
+def metrics_endpoint(state: ServerState = Depends(get_state)) -> Response:
+    """Prometheus metrics in the text exposition format."""
+    return Response(content=state.metrics.render(), media_type=CONTENT_TYPE_LATEST)
+
+
 @router.get("/", tags=["Health"])
 def root() -> dict[str, str]:
     """Return the API name, version and docs path."""
@@ -342,6 +356,7 @@ def create_token(request: TokenRequest, state: ServerState = Depends(get_state))
             )
     except AuthenticationFailed as exc:
         logger.info("Login failed for %r: %s", request.client_id, exc.reason)
+        state.metrics.auth_failure(exc.reason)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login failed") from exc
     token, expires_in = state.tokens.issue(client.id, client.scope)
     return TokenResponse(access_token=token, expires_in=expires_in, scope=client.scope)
@@ -465,21 +480,35 @@ def submit_update(
     frame; 401 frame from an unknown or foreign session; 413 too large; 422
     payload that does not match the round's spec or limits.
     """
-    _check_length(request, state.settings.max_update_bytes)
+    metrics = state.metrics
+    try:
+        _check_length(request, state.settings.max_update_bytes)
+    except HTTPException:
+        metrics.update("rejected", "too_large")
+        raise
     if len(frame) > state.settings.max_update_bytes:
+        metrics.update("rejected", "too_large")
         raise HTTPException(413, "Update too large")
     try:
         payload = state.sessions.open(frame, principal.client_id)
     except TransportError as exc:
+        metrics.update("rejected", "transport")
         raise _transport_http_error(exc) from exc
     try:
         info = state.rounds.submit(round_id, principal.client_id, payload)
     except RoundNotFoundError as exc:
+        metrics.update("rejected", "unknown_round")
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    except (RoundNotOpenError, DuplicateSubmissionError) as exc:
+    except RoundNotOpenError as exc:
+        metrics.update("rejected", "round_not_open")
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except DuplicateSubmissionError as exc:
+        metrics.update("rejected", "duplicate")
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except InvalidSubmissionError as exc:
+        metrics.update("rejected", "invalid")
         raise HTTPException(422, str(exc)) from exc
+    metrics.update("accepted")
     return {"round_id": round_id, "state": info.state, "submissions": info.submissions}
 
 
@@ -588,8 +617,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database = Database(settings.resolved_database_url())
         database.upgrade()
         signer = get_signer(keys.signature_algorithm, settings.crypto_backend)
+        metrics = Metrics()
+
+        def on_event(name: str, info: RoundInfo) -> None:
+            if name == "opened":
+                metrics.round_state(name)
+            elif name in ("closed", "failed"):
+                closed = info.closed_at if info.closed_at is not None else info.created_at
+                metrics.round_state(name, closed - info.created_at)
+
         rounds = RoundService(
-            database, BlobStore(settings.data_dir / "blobs"), max_samples=settings.max_samples
+            database,
+            BlobStore(settings.data_dir / "blobs"),
+            max_samples=settings.max_samples,
+            on_event=on_event,
+            on_aggregated=metrics.aggregation.observe,
         )
         app.state.qedge = ServerState(
             settings=settings,
@@ -604,6 +646,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 keys=keys,
                 ttl_seconds=settings.session_ttl_seconds,
             ),
+            metrics=metrics,
         )
 
         async def watch_deadlines() -> None:
