@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import struct
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -156,3 +158,47 @@ def decode_weights(spec: ModelSpec, payload: bytes) -> dict[str, NDArray[Any]]:
             raise WeightFormatError(f"{tensor.name}: contains NaN or infinity")
         arrays[tensor.name] = array
     return arrays
+
+
+UPDATE_MAGIC = b"QEU1"
+_UPDATE_HEADER = struct.Struct(">4sQId")
+
+
+@dataclass(frozen=True)
+class UpdateHeader:
+    """Round id and the client's claimed sample count and local loss."""
+
+    round_id: int
+    n_samples: int
+    local_loss: float
+
+
+def encode_update(
+    header: UpdateHeader, spec: ModelSpec, arrays: Mapping[str, NDArray[Any]]
+) -> bytes:
+    """Encode a client update: ``QEU1 | round u64 | n_samples u32 | loss f64 | weights``.
+
+    Raises:
+        WeightFormatError: As `encode_weights`, or if the header is out of range.
+    """
+    if not 0 <= header.round_id < 2**64 or not 0 <= header.n_samples < 2**32:
+        raise WeightFormatError("Round id or sample count out of range")
+    if not math.isfinite(header.local_loss):
+        raise WeightFormatError("Local loss is not finite")
+    packed = _UPDATE_HEADER.pack(UPDATE_MAGIC, header.round_id, header.n_samples, header.local_loss)
+    return packed + encode_weights(spec, arrays)
+
+
+def decode_update(spec: ModelSpec, payload: bytes) -> tuple[UpdateHeader, dict[str, NDArray[Any]]]:
+    """Decode a payload produced by `encode_update` for ``spec``.
+
+    Raises:
+        WeightFormatError: If the header or the weights are malformed.
+    """
+    if len(payload) < _UPDATE_HEADER.size or payload[:4] != UPDATE_MAGIC:
+        raise WeightFormatError("Payload does not start with a QEU1 update header")
+    _, round_id, n_samples, local_loss = _UPDATE_HEADER.unpack_from(payload)
+    if not math.isfinite(local_loss):
+        raise WeightFormatError("Local loss is not finite")
+    arrays = decode_weights(spec, payload[_UPDATE_HEADER.size :])
+    return UpdateHeader(round_id, n_samples, local_loss), arrays
