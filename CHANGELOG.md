@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- README translations in 15 languages (`README_xx.md`) with a language
+  switcher. Code blocks, numbers and references are copied verbatim from
+  `README.md`, which stays authoritative.
+
 ## [0.2.0] - 2026-10-17
 
 The first version that is a measurable testbed instead of a demo. Every
@@ -75,4 +83,5 @@ which `make reproduce` regenerates.
   falling back to simulated cryptography.
 - `JWT_SECRET_KEY` is required and must be at least 32 bytes.
 
+[Unreleased]: https://github.com/rasidi3112/Q-Edge/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/rasidi3112/Q-Edge/releases/tag/v0.2.0
