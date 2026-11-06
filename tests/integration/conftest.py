@@ -9,7 +9,8 @@ from qedge.server.auth import enroll_client
 from qedge.server.db import Database
 from qedge.server.settings import Settings
 
-JWT_SECRET = "integration-test-secret-0123456789abcdef"
+# Test-only signing key, not a secret.
+JWT_SECRET = "integration-test-secret-0123456789abcdef"  # gitleaks:allow
 
 
 @pytest.fixture(scope="session")

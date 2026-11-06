@@ -34,14 +34,15 @@ jobs:
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.13"
-      # The runner's Python ships an old setuptools that torch accepts as is;
-      # audit what a fresh install would get instead.
-      - run: python -m pip install --upgrade pip setuptools
-      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[server,fl]"
-      # CPU wheels are versioned like torch==2.14.1+cpu, which is not on PyPI, so
-      # --strict would fail; audit the release they are built from instead.
-      - run: pip freeze --exclude-editable | sed -E 's/\+[A-Za-z0-9.]+$//' > requirements-audit.txt
+      # Pin what a fresh install of the server and fl extras resolves to, without
+      # installing it. pip's resolver gives up on this graph (resolution-too-deep):
+      # flwr caps fastapi, starlette, uvicorn, typer and protobuf below their
+      # latest releases, and pip backtracks through every newer version first.
+      # Every pin is a PyPI release (torch included), so --strict can check it.
+      - run: >-
+          pipx run uv==0.13.7 pip compile pyproject.toml
+          --extra server --extra fl --python-version 3.13
+          --no-header --no-annotate -o requirements-audit.txt
       - run: >-
           pipx run pip-audit==2.10.1 --strict --no-deps --disable-pip
           -r requirements-audit.txt

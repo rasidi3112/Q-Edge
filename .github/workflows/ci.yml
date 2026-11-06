@@ -25,7 +25,11 @@ jobs:
           cache-dependency-path: pyproject.toml
       # CPU wheels: the default torch wheel pulls in CUDA libraries.
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev,server,fl]"
+      # pip's resolver gives up on the fl extra (resolution-too-deep): flwr caps
+      # fastapi, starlette, uvicorn, typer and protobuf below their latest
+      # releases. uv resolves it and keeps the CPU torch installed above.
+      - run: pip install uv==0.13.7
+      - run: uv pip install --system -e ".[dev,server,fl]"
       - run: ruff check . --output-format=github
       - run: ruff format --check .
       - run: mypy src/qedge
@@ -45,7 +49,11 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev,server,pqc-pure,fl,report]"
+      # pip's resolver gives up on the fl extra (resolution-too-deep): flwr caps
+      # fastapi, starlette, uvicorn, typer and protobuf below their latest
+      # releases. uv resolves it and keeps the CPU torch installed above.
+      - run: pip install uv==0.13.7
+      - run: uv pip install --system -e ".[dev,server,pqc-pure,fl,report]"
       - run: pytest -m "not slow" --cov=qedge --cov-report=term-missing
       - run: qedge simulate --clients 10 --rounds 30 --out "$RUNNER_TEMP/runs"
 
