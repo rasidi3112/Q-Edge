@@ -244,7 +244,8 @@ du backend pur et les jetons volés avant leur expiration. Voir
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[dev,server,pqc-pure,fl,report]"
+pip install uv==0.13.7   # pip gives up resolving fl together with server
+uv pip install -e ".[dev,server,pqc-pure,fl,report]"
 pre-commit install
 make lint             # ruff check, ruff format --check, mypy --strict on src/qedge
 make test             # pytest -m "not slow"
