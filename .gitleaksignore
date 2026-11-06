@@ -1,0 +1,5 @@
+# Findings that gitleaks reports but that are not secrets. One fingerprint per
+# line, as printed in the "Fingerprint:" field of the gitleaks output.
+
+# Fixed JWT signing key used only by the integration tests (generic-api-key).
+f692a898ef34b592b321ab6af109b11fe69d41c9:tests/integration/conftest.py:generic-api-key:7
