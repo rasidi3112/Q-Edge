@@ -20,5 +20,9 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev,server,pqc-pure,fl,flower-sim,report]"
+      # pip's resolver gives up on the fl extra (resolution-too-deep): flwr caps
+      # fastapi, starlette, uvicorn, typer and protobuf below their latest
+      # releases. uv resolves it and keeps the CPU torch installed above.
+      - run: pip install uv==0.13.7
+      - run: uv pip install --system -e ".[dev,server,pqc-pure,fl,flower-sim,report]"
       - run: pytest -m slow
