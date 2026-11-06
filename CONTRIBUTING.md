@@ -13,7 +13,8 @@ cd Q-Edge
 python -m venv .venv
 source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[dev,server,pqc-pure,fl,report]"
+pip install uv==0.13.7   # pip gives up resolving fl together with server
+uv pip install -e ".[dev,server,pqc-pure,fl,report]"
 pre-commit install
 ```
 
